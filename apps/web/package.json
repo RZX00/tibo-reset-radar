@@ -1,0 +1,33 @@
+{
+  "name": "@tibo-radar/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5178",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.2.8",
+    "@fontsource-variable/newsreader": "^5.2.8",
+    "@tibo-radar/contracts": "workspace:*",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.3.1",
+    "vitest": "^3.2.6"
+  }
+}

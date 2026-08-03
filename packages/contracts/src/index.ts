@@ -97,6 +97,7 @@ export const ForecastDaySchema = z.object({
   weatherCode: z.enum(["clear", "partly_cloudy", "cloudy", "storm_watch", "storm_warning"]),
   buckets: z.array(ForecastBucketSchema).length(4),
 });
+export type ForecastDay = z.infer<typeof ForecastDaySchema>;
 
 export const ResetStateSchema = z.enum([
   "forecasting",
@@ -160,5 +161,22 @@ export interface RadarStatus {
   activity: {
     status: ActivityStatus;
     lastPublicActivityAt: string | null;
+  };
+}
+
+export interface RadarEventsResponse {
+  window: string;
+  items: SourcePostObserved[];
+}
+
+export interface RadarResetStatusResponse {
+  state: ResetState;
+  event: ResetEvent | null;
+}
+
+export interface RadarApiErrorPayload {
+  error: {
+    code: string;
+    message: string;
   };
 }

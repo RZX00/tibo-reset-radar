@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { loadEnvFile } from "node:process";
 import pg from "pg";
 
 const { Pool } = pg;
+loadLocalEnv();
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
 
@@ -60,4 +62,16 @@ try {
   }
 } finally {
   await pool.end();
+}
+
+function loadLocalEnv(): void {
+  try {
+    loadEnvFile(path.resolve(".env"));
+  } catch (error) {
+    if (
+      !(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
+    ) {
+      throw error;
+    }
+  }
 }

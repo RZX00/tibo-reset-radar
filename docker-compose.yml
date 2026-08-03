@@ -51,6 +51,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://radar:radar@postgres:5432/radar
+      TARGET_CONFIG_PATH: /app/config/target.json
     depends_on:
       migrate:
         condition: service_completed_successfully

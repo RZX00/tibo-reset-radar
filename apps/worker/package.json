@@ -1,0 +1,23 @@
+{
+  "name": "@tibo-radar/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@tibo-radar/contracts": "workspace:*",
+    "@tibo-radar/forecast": "workspace:*",
+    "@tibo-radar/signal": "workspace:*",
+    "@tibo-radar/x-source": "workspace:*",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.11"
+  }
+}
