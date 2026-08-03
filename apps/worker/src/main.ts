@@ -14,6 +14,7 @@ import {
 import pg from "pg";
 
 import { createDemoFixtures } from "./demo-fixtures.js";
+import { InboxTimelineSource } from "./inbox-source.js";
 import { PostgresWorkerRepository } from "./repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
 
@@ -25,7 +26,9 @@ export async function startWorker() {
   const timeline =
     config.mode === "demo"
       ? new DemoTimelineSource(createDemoFixtures(config))
-      : new XUserTimelineSource({ bearerToken: requiredEnv("X_BEARER_TOKEN") });
+      : usesPushedInbox()
+        ? new InboxTimelineSource({ reader: repository })
+        : new XUserTimelineSource({ bearerToken: requiredEnv("X_BEARER_TOKEN") });
   const signalAdapter =
     process.env.LLM_BASE_URL && process.env.LLM_API_KEY && process.env.LLM_MODEL
       ? new OpenAICompatibleSignalAdapter({
@@ -47,7 +50,11 @@ export async function startWorker() {
       return;
     }
 
-    if (config.mode === "live" && process.env.RADAR_COLLECTOR_MODE === "stream") {
+    if (
+      config.mode === "live" &&
+      !usesPushedInbox() &&
+      process.env.RADAR_COLLECTOR_MODE === "stream"
+    ) {
       await worker.runOnce(controller.signal);
       await runReconnectingStream({
         source: new XFilteredStreamSource({ bearerToken: requiredEnv("X_BEARER_TOKEN") }),
@@ -78,6 +85,10 @@ function loadRepositoryEnv(): void {
   } catch (error) {
     if (!isMissingFile(error)) throw error;
   }
+}
+
+function usesPushedInbox(): boolean {
+  return process.env.RADAR_COLLECTOR_MODE === "inbox";
 }
 
 function targetConfigPath(): string {

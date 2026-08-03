@@ -59,6 +59,18 @@ export class PostgresWorkerRepository {
     return result.rows.map(mapPostRow);
   }
 
+  async readInbox(sinceId: string | null, limit: number): Promise<unknown[]> {
+    // post_id is a snowflake, so ordering has to be numeric — lexical order breaks across digit
+    // counts and would silently strand the oldest pushed posts behind the cursor.
+    const result = await this.pool.query<{ payload: unknown }>(
+      `SELECT payload FROM ingest_inbox
+       WHERE post_id ~ '^[0-9]+$' AND ($1::text IS NULL OR post_id::numeric > $1::numeric)
+       ORDER BY post_id::numeric ASC LIMIT $2`,
+      [sinceId, limit],
+    );
+    return result.rows.map((row) => row.payload);
+  }
+
   async saveExtraction(post: SourcePostObserved, result: SignalExtractionResult): Promise<void> {
     await this.pool.query(
       `INSERT INTO signal_extractions (
