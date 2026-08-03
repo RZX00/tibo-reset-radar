@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://radar.ewo.so/contracts/target.schema.json",
+  "$id": "https://tibo-reset.ewo.so/contracts/target.schema.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
