@@ -24,9 +24,31 @@ For process-level development, start PostgreSQL with Compose, then run `pnpm db:
 `pnpm dev:api`, `pnpm dev:worker`, and `pnpm dev:web` in separate terminals. Entrypoints load the
 ignored root `.env` automatically.
 
-Before live mode, replace `config/target.json` with the exact public X user ID, handle,
-authoritative source IDs, Reset definition, and banked-reset policy. Add X/LLM credentials only to
-the ignored environment file, then change both target mode and `DEMO_MODE` deliberately.
+## Going live
+
+`config/target.json` stays in demo mode in this repository; CI fails if it does not. The live
+identity lives in [`config/target.live.example.json`](config/target.live.example.json): the tracked
+account is the public X account that announces the resets (`@thsottiaux`, numeric ID
+`1953337039510003712`), and the authoritative accounts that can confirm one are that account plus
+`@OpenAI`, `@OpenAIDevs`, and `@embirico`. `banked_reset` stays `forecast_only` on purpose — a
+banked reset raises the forecast but must not claim that anyone's limit has already been restored.
+
+A deployment mounts its own target file, so switching modes is host state rather than a rebuild:
+
+```bash
+cp config/target.live.example.json deploy/target.live.json   # untracked on the host
+# deploy/.env.production
+RADAR_TARGET_CONFIG_FILE=./target.live.json
+DEMO_MODE=false
+X_BEARER_TOKEN=...        # required by the live collector
+LLM_BASE_URL=...          # optional; without it, extraction uses the deterministic fallback
+LLM_API_KEY=...
+LLM_MODEL=...
+```
+
+Credentials belong only in the ignored environment file. Both the target mode and `DEMO_MODE` are
+deliberate, separate switches: the first decides where posts come from, the second decides whether
+the page still labels itself as demonstration data.
 
 ## Verification
 

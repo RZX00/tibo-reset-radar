@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "demo",
+  "target": {
+    "userId": "demo-tibo",
+    "handle": "tibo_demo",
+    "displayName": "Tibo"
+  },
+  "authoritativeUserIds": ["demo-tibo"],
+  "resetDefinition": "The next publicly announced product usage reset event.",
+  "bankedResetPolicy": "forecast_only"
+}

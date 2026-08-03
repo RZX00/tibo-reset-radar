@@ -56,6 +56,10 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
+    volumes:
+      # The image ships the demo target. The deployed identity is host state, so live mode is a
+      # file swap plus credentials, never an image rebuild.
+      - ${RADAR_TARGET_CONFIG_FILE:-./target.demo.json}:/app/config/target.json:ro
     networks: [radar-production]
     depends_on:
       migrate:
