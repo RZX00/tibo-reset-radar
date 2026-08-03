@@ -1,9 +1,9 @@
 # Tibo Reset Radar
 
-An open-source weather radar for public Tibo activity and the next Reset window.
+An open-source radar for public Tibo activity and the next Reset window.
 
 ```ascii
-X official API -> signal extraction -> 28 rolling forecast buckets -> weather UI
+X timeline -> signal extraction -> 28 rolling forecast buckets -> single-page radar
 ```
 
 The forecast never uses `100%`. A confirmed Reset is a separate, evidence-backed state.

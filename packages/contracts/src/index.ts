@@ -94,7 +94,7 @@ export const ForecastDaySchema = z.object({
   endAt: z.string().datetime(),
   intervalProbability: z.number().min(0).max(0.99),
   cumulativeProbability: z.number().min(0).max(0.99),
-  weatherCode: z.enum(["clear", "partly_cloudy", "cloudy", "storm_watch", "storm_warning"]),
+  signalLevel: z.enum(["calm", "slight", "gathering", "elevated", "strong"]),
   buckets: z.array(ForecastBucketSchema).length(4),
 });
 export type ForecastDay = z.infer<typeof ForecastDaySchema>;

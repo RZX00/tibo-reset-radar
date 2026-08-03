@@ -153,7 +153,7 @@ function forecastFixture() {
       endAt: buckets[index * 4 + 3]?.endAt,
       intervalProbability: 0.04,
       cumulativeProbability: (index + 1) * 0.04,
-      weatherCode: index === 0 ? "partly_cloudy" : "clear",
+      signalLevel: index === 0 ? "slight" : "calm",
       buckets: buckets.slice(index * 4, index * 4 + 4),
     })),
     confirmedSignal: null,

@@ -9,17 +9,17 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  Cloud,
-  CloudLightning,
-  CloudRain,
-  CloudSun,
   ExternalLink,
   Github,
   LoaderCircle,
   Radio,
   RefreshCw,
   Share2,
-  Sun,
+  Signal,
+  SignalHigh,
+  SignalLow,
+  SignalMedium,
+  SignalZero,
 } from "lucide-react";
 import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
 import { track } from "./analytics.js";
@@ -29,15 +29,16 @@ type RadarData = Awaited<ReturnType<typeof loadRadar>>;
 
 const TIMEZONES = ["Asia/Shanghai", "UTC", "America/Los_Angeles", "Europe/London"];
 
-const weatherMeta: Record<
-  ForecastDay["weatherCode"],
-  { label: string; note: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }
+// The page forecasts one event, so the only honest vocabulary is how strong the signal is.
+const signalMeta: Record<
+  ForecastDay["signalLevel"],
+  { label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }
 > = {
-  clear: { label: "晴", note: "信号平静", icon: Sun },
-  partly_cloudy: { label: "晴间多云", note: "轻微信号", icon: CloudSun },
-  cloudy: { label: "多云", note: "信号聚集", icon: Cloud },
-  storm_watch: { label: "雷雨观察", note: "高概率窗口", icon: CloudRain },
-  storm_warning: { label: "暴雨预警", note: "强信号窗口", icon: CloudLightning },
+  calm: { label: "信号平静", icon: SignalZero },
+  slight: { label: "轻微信号", icon: SignalLow },
+  gathering: { label: "信号聚集", icon: SignalMedium },
+  elevated: { label: "高概率窗口", icon: SignalHigh },
+  strong: { label: "强信号窗口", icon: Signal },
 };
 
 const activityMeta: Record<ActivityStatus, { label: string; note: string }> = {
@@ -121,7 +122,7 @@ function DayCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const meta = weatherMeta[day.weatherCode];
+  const meta = signalMeta[day.signalLevel];
   const Icon = meta.icon;
   return (
     <button
@@ -135,8 +136,7 @@ function DayCard({
       <span className="day-window">{dateTime(day.startAt, timezone)}</span>
       <Icon size={32} strokeWidth={1.6} />
       <strong>{percent(day.intervalProbability)}</strong>
-      <span className="weather-label">{meta.label}</span>
-      <span className="weather-note">{meta.note}</span>
+      <span className="signal-label">{meta.label}</span>
       <span className="cumulative">累计 {percent(day.cumulativeProbability)}</span>
     </button>
   );
@@ -380,7 +380,7 @@ export function App() {
       <section className="forecast-section" aria-labelledby="forecast-heading">
         <div className="section-heading">
           <div>
-            <span>7 DAY WEATHER STRIP</span>
+            <span>7 DAY SIGNAL STRIP</span>
             <h2 id="forecast-heading">未来窗口</h2>
           </div>
           {topBucket ? (
@@ -409,7 +409,7 @@ export function App() {
             <span>DAY {day.dayIndex} · 6H WINDOWS</span>
             <h2>{dateTime(day.startAt, timezone)} 起</h2>
           </div>
-          <p>{weatherMeta[day.weatherCode].note}</p>
+          <p>{signalMeta[day.signalLevel].label}</p>
         </div>
         <div className="bucket-grid">
           {day.buckets.map((bucket) => (
