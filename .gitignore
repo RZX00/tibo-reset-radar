@@ -10,4 +10,6 @@ output/
 *.tsbuildinfo
 playwright-report/
 test-results/
+.release-tag
+deploy/.release-tag
 .DS_Store
