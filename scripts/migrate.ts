@@ -1,7 +1,7 @@
 import path from "node:path";
 import { loadEnvFile } from "node:process";
 
-import { migrate, RadarDatabase } from "@tibo-radar/db";
+import { migrate, RadarDatabase } from "../packages/db/src/index.js";
 
 loadLocalEnv();
 const db = new RadarDatabase({ file: databasePath() });
