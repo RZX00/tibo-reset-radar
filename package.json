@@ -1,0 +1,35 @@
+{
+  "name": "tibo-reset-radar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.4.0",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "dev:web": "pnpm --filter @tibo-radar/web dev",
+    "dev:api": "pnpm --filter @tibo-radar/api dev",
+    "dev:worker": "pnpm --filter @tibo-radar/worker dev",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:status": "tsx scripts/migrate.ts --status",
+    "contracts:check": "tsx scripts/check-contracts.ts",
+    "oss:scan": "tsx scripts/scan-oss-surface.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm oss:scan"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@types/node": "^22.10.7",
+    "@vitest/coverage-v8": "^3.2.6",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.6"
+  }
+}
