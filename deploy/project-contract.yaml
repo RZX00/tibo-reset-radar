@@ -3,7 +3,7 @@
   "mode": "ghcr-docker-compose",
   "local": {
     "repo_root": "/mnt/e/app/tibo-reset-radar",
-    "build_command": "git tag -a v0.1.1 -m 'v0.1.1' && git push origin v0.1.1 && printf '0.1.1\\n' > deploy/.release-tag",
+    "build_command": "git tag -a v0.1.2 -m 'v0.1.2' && git push origin v0.1.2 && printf '0.1.2\\n' > deploy/.release-tag",
     "tag_file": "deploy/.release-tag",
     "deploy_bundle_paths": [
       "deploy"
