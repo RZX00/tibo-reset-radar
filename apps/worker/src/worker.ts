@@ -5,11 +5,11 @@ import { deriveActivityStatus, deriveFreshness, generateForecast } from "@tibo-r
 import { evaluateConfirmation, extractSignal, type SignalModelAdapter } from "@tibo-radar/signal";
 import type { TimelineSource } from "@tibo-radar/x-source";
 
-import type { PostgresWorkerRepository } from "./repository.js";
+import type { SqliteWorkerRepository } from "./repository.js";
 
 export interface RadarWorkerOptions {
   source: TimelineSource;
-  repository: PostgresWorkerRepository;
+  repository: SqliteWorkerRepository;
   target: TargetConfig;
   signalAdapter: SignalModelAdapter;
   now?: () => Date;
@@ -17,7 +17,7 @@ export interface RadarWorkerOptions {
 
 export class RadarWorker {
   readonly #source: TimelineSource;
-  readonly #repository: PostgresWorkerRepository;
+  readonly #repository: SqliteWorkerRepository;
   readonly #target: TargetConfig;
   readonly #signalAdapter: SignalModelAdapter;
   readonly #now: () => Date;

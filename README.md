@@ -10,7 +10,7 @@ The forecast never uses `100%`. A confirmed Reset is a separate, evidence-backed
 
 ## Quick Start
 
-Requirements: Node.js 22, pnpm 10.4, Docker, and Docker Compose.
+Requirements: Node.js 24, pnpm 10.4, Docker, and Docker Compose.
 
 ```bash
 cp .env.example .env
@@ -20,9 +20,14 @@ docker compose up -d --build
 
 Open `http://127.0.0.1:4173`. The checked-in target and page are visibly marked as Demo data.
 
-For process-level development, start PostgreSQL with Compose, then run `pnpm db:migrate`,
-`pnpm dev:api`, `pnpm dev:worker`, and `pnpm dev:web` in separate terminals. Entrypoints load the
-ignored root `.env` automatically.
+One container runs everything: it migrates the schema on boot, serves the API and the built page
+from the same origin, and runs the collector loop in-process. State is a single SQLite file
+(`/data/radar.db` in the container, `RADAR_DB_PATH` elsewhere) — there is no database server to
+run, back up, or scale, which is the right shape for one page reading one public timeline.
+
+For process-level development run `pnpm db:migrate` once, then `pnpm dev:api` and `pnpm dev:web` in
+separate terminals; `pnpm dev:worker` is only needed if you set `RADAR_RUN_WORKER=false` and want
+the collector separate. Entrypoints load the ignored root `.env` automatically.
 
 ## Going live
 
@@ -79,14 +84,15 @@ pnpm test:integration
 pnpm model:backtest
 ```
 
-The integration test uses PostgreSQL and proves collect -> edit/delete -> extract -> forecast ->
-API/PNG. The backtest only evaluates forecast windows whose full 168-hour horizon has elapsed.
+The integration test runs against a real SQLite database and proves collect -> edit/delete ->
+extract -> forecast -> API/PNG, including that pushed history lands regardless of push order. The
+backtest only evaluates forecast windows whose full 168-hour horizon has elapsed.
 
 ## Operations
 
-Tagged releases publish immutable node and web images to GHCR. Production deployment and rollback
-use `deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and
-`main` image tags are rejected.
+A tagged release publishes one immutable image to GHCR. Production deployment and rollback use
+`deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and `main`
+image tags are rejected. Rolling back only changes the image — the SQLite file is untouched.
 
 The Chinese-first architecture, model card, data policy, verification evidence, and runbook are in
 [`docs/2026-08-03-architecture-model-and-operations.zh.html`](docs/2026-08-03-architecture-model-and-operations.zh.html).

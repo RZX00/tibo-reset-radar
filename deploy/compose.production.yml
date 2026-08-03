@@ -1,56 +1,13 @@
 name: tibo-reset-radar-production
 
 services:
-  postgres:
-    image: postgres:17-alpine
+  radar:
+    image: ${RADAR_IMAGE:?RADAR_IMAGE is required}
     restart: unless-stopped
     environment:
-      POSTGRES_DB: radar
-      POSTGRES_USER: radar
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    volumes:
-      - radar-postgres-production:/var/lib/postgresql/data
-    networks: [radar-production]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U radar -d radar"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  migrate:
-    image: ${RADAR_NODE_IMAGE:?RADAR_NODE_IMAGE is required}
-    command: ["pnpm", "db:migrate"]
-    environment:
-      DATABASE_URL: postgres://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
-    networks: [radar-production]
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  api:
-    image: ${RADAR_NODE_IMAGE:?RADAR_NODE_IMAGE is required}
-    restart: unless-stopped
-    command: ["pnpm", "--filter", "@tibo-radar/api", "start"]
-    environment:
-      DATABASE_URL: postgres://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
       DEMO_MODE: ${DEMO_MODE:-true}
       # Empty means the ingest route is not registered at all.
       RADAR_INGEST_TOKEN: ${RADAR_INGEST_TOKEN:-}
-      HOST: 0.0.0.0
-      PORT: 8787
-    expose: ["8787"]
-    networks: [radar-production]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  worker:
-    image: ${RADAR_NODE_IMAGE:?RADAR_NODE_IMAGE is required}
-    restart: unless-stopped
-    command: ["pnpm", "--filter", "@tibo-radar/worker", "start"]
-    environment:
-      DATABASE_URL: postgres://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
-      TARGET_CONFIG_PATH: /app/config/target.json
       RADAR_COLLECTOR_MODE: ${RADAR_COLLECTOR_MODE:-poll}
       POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-300000}
       X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
@@ -58,26 +15,20 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
+      TARGET_CONFIG_PATH: /app/config/target.json
     volumes:
+      - radar-data:/data
       # The image ships the demo target. The deployed identity is host state, so live mode is a
       # file swap plus credentials, never an image rebuild.
       - ${RADAR_TARGET_CONFIG_FILE:-./target.demo.json}:/app/config/target.json:ro
-    networks: [radar-production]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  web:
-    image: ${RADAR_WEB_IMAGE:?RADAR_WEB_IMAGE is required}
-    restart: unless-stopped
     ports:
-      - "${RADAR_BIND_ADDRESS:-127.0.0.1}:${RADAR_PORT:-4173}:80"
-    networks: [radar-production]
-    depends_on: [api]
+      - "${RADAR_BIND_ADDRESS:-127.0.0.1}:${RADAR_PORT:-4173}:8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/status').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
-  radar-postgres-production:
-
-networks:
-  radar-production:
-    name: tibo-reset-radar-production
+  radar-data:

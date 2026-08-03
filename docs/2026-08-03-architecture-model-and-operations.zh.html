@@ -111,7 +111,7 @@
         <h1>架构、模型与运行手册</h1>
         <p class="lede">本文是首发实现的当前事实：独立开源仓库、可插拔的 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页天气雷达以及容器化部署边界。公共实例已于 2026-08-03 切到真实数据：目标是 <code>@thsottiaux</code>（<code>1953337039510003712</code>），采集由本地机器完成后推送，服务器自身不持有任何 X 凭据。</p>
         <div class="tags">
-          <span class="tag">Apache-2.0</span><span class="tag">Node.js 22</span><span class="tag">PostgreSQL 17</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
+          <span class="tag">Apache-2.0</span><span class="tag">Node.js 24</span><span class="tag">SQLite</span><span class="tag">单容器</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
         </div>
         <div class="cards">
           <article class="card"><span>边界</span><h3>与 ewo 完全隔离</h3><p>不引用 ewo 包、数据库、会话、部署网络或密钥。品牌署名不形成运行依赖。</p></article>
@@ -125,7 +125,7 @@
         <div class="section-head"><div><span class="kicker">Boundary</span><h2>仓库与运行边界</h2><p class="note">所有资产在 <code>E:\app\tibo-reset-radar</code> 内独立演进。</p></div><div class="number">01</div></div>
         <pre>Tibo Reset Radar
 |- source ------------------------- github.com/RZX00/tibo-reset-radar
-|- database ----------------------- dedicated PostgreSQL 17 + volume
+|- database ----------------------- SQLite file on a dedicated volume
 |- network ------------------------ dedicated Compose network
 |- secrets ------------------------ ignored .env / host secret store
 |- public host -------------------- tibo-reset.ewo.so (live, dedicated host)
@@ -144,7 +144,7 @@
             <rect class="node" x="420" y="90" width="150" height="78"/><text class="svg-title" x="495" y="121" text-anchor="middle">Signal</text><text class="svg-note" x="495" y="143" text-anchor="middle">LLM + rules</text>
             <rect class="node green" x="615" y="30" width="160" height="78"/><text class="svg-title" x="695" y="61" text-anchor="middle">Forecast</text><text class="svg-note" x="695" y="83" text-anchor="middle">28 rolling buckets</text>
             <rect class="node amber" x="615" y="150" width="160" height="78"/><text class="svg-title" x="695" y="181" text-anchor="middle">Confirmation</text><text class="svg-note" x="695" y="203" text-anchor="middle">authority + occurred</text>
-            <rect class="node" x="820" y="90" width="130" height="78"/><text class="svg-title" x="885" y="121" text-anchor="middle">PostgreSQL</text><text class="svg-note" x="885" y="143" text-anchor="middle">audit truth</text>
+            <rect class="node" x="820" y="90" width="130" height="78"/><text class="svg-title" x="885" y="121" text-anchor="middle">SQLite</text><text class="svg-note" x="885" y="143" text-anchor="middle">audit truth</text>
             <rect class="node blue" x="990" y="90" width="105" height="78"/><text class="svg-title" x="1042" y="121" text-anchor="middle">API / UI</text><text class="svg-note" x="1042" y="143" text-anchor="middle">read only</text>
             <path class="line" d="M180 129 H225"/><path class="line" d="M375 129 H420"/><path class="line" d="M570 112 L615 74"/><path class="line" d="M570 146 L615 181"/><path class="line" d="M775 69 L820 111"/><path class="line" d="M775 189 L820 147"/><path class="line" d="M950 129 H990"/>
             <text class="svg-note" x="300" y="260" text-anchor="middle">断线立即对账；正常每 5 分钟对账</text><text class="svg-note" x="695" y="280" text-anchor="middle">stale 冻结预测，不篡改事件概率</text>
@@ -236,8 +236,8 @@ sh deploy/rollback.sh deploy/.env.production.previous</pre>
         <div class="section-head"><div><span class="kicker">Evidence</span><h2>首发验证证据</h2></div><div class="number">09</div></div>
         <table><thead><tr><th>检查</th><th>当前结果</th><th>证据</th></tr></thead><tbody>
           <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、Forecast、Collector、API、Web；250 组预测属性输入</td></tr>
-          <tr><td>PostgreSQL E2E</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG</td></tr>
-          <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>PostgreSQL 17、migrate、api、worker、web</td></tr>
+          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG；含乱序回填</td></tr>
+          <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>单镜像：迁移 + API + 静态页 + 采集循环同进程</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
           <tr><td>真实 X 闭环</td><td><span class="status ok">PASS</span></td><td>本地采集 → <code>POST /api/ingest/posts</code> → 入库去重 → 提取 → 新预测 → 页面；首批 20 条真实公开帖</td></tr>
           <tr><td>LLM 信号提取</td><td><span class="status blocked">WAITING INPUT</span></td><td>未配置 <code>LLM_*</code>，当前走确定性规则回退</td></tr>

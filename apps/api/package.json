@@ -12,10 +12,8 @@
   },
   "dependencies": {
     "@tibo-radar/contracts": "workspace:*",
-    "fastify": "^5.2.1",
-    "pg": "^8.13.1"
-  },
-  "devDependencies": {
-    "@types/pg": "^8.11.11"
+    "@tibo-radar/db": "workspace:*",
+    "@tibo-radar/worker": "workspace:*",
+    "fastify": "^5.2.1"
   }
 }
