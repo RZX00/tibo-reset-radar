@@ -109,7 +109,7 @@
       <header id="summary">
         <span class="kicker">2026-08-03 · RZX00/tibo-reset-radar</span>
         <h1>架构、模型与运行手册</h1>
-        <p class="lede">本文是首发实现的当前事实：独立开源仓库、官方 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页天气雷达以及容器化部署边界。真实 Tibo 身份和运行凭据未配置前，系统必须保持 Demo 模式。</p>
+        <p class="lede">本文是首发实现的当前事实：独立开源仓库、可插拔的 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页天气雷达以及容器化部署边界。公共实例已于 2026-08-03 切到真实数据：目标是 <code>@thsottiaux</code>（<code>1953337039510003712</code>），采集由本地机器完成后推送，服务器自身不持有任何 X 凭据。</p>
         <div class="tags">
           <span class="tag">Apache-2.0</span><span class="tag">Node.js 22</span><span class="tag">PostgreSQL 17</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
         </div>
@@ -131,7 +131,7 @@
 |- public host -------------------- tibo-reset.ewo.so (live, dedicated host)
 |- ewo dependency ----------------- none
 \- prohibited runtime coupling ---- ewo DB / API / cookies / packages / keys</pre>
-        <div class="callout"><strong>当前发布门禁：</strong> <code>config/target.json</code> 仍是 Demo 身份。切换 live 前必须补齐准确 User ID、handle、Reset 定义、权威账号白名单和 banked reset 规则。</div>
+        <div class="callout"><strong>身份与门禁：</strong>公开仓库里的 <code>config/target.json</code> 永远是 Demo，CI 强制。真实身份冻结在 <code>config/target.live.example.json</code>：目标 <code>@thsottiaux</code>，确认权威额外包含 <code>@OpenAI</code>、<code>@OpenAIDevs</code>、<code>@embirico</code>，<code>banked_reset</code> 取 <code>forecast_only</code>。部署通过 <code>RADAR_TARGET_CONFIG_FILE</code> 挂载自己的目标文件，切换模式不需要重建镜像。</div>
       </section>
 
       <section id="flow">
@@ -229,7 +229,7 @@ sh deploy/deploy.sh deploy/.env.production
 
 # 回滚应用镜像；数据库迁移保持向前兼容
 sh deploy/rollback.sh deploy/.env.production.previous</pre>
-        <div class="callout"><strong>tibo-reset.ewo.so 已发布（2026-08-03）：</strong>v0.1.1 镜像运行在独立主机上，Cloudflare 代理 A 记录 + Let's Encrypt origin 证书 + OpenResty 反向代理到 <code>127.0.0.1:4173</code>，四条冒烟 URL 全部 200。实例仍是 Demo 模式；切到真实数据只差目标身份与 X/LLM 凭据。</div>
+        <div class="callout"><strong>tibo-reset.ewo.so 已发布并已切真实数据（2026-08-03）：</strong>v0.1.2 镜像运行在独立主机上，Cloudflare 代理 A 记录 + Let's Encrypt origin 证书 + OpenResty 反向代理到 <code>127.0.0.1:4173</code>，四条冒烟 URL 全部 200。采集走 <code>RADAR_COLLECTOR_MODE=inbox</code>：本地机器每 5 分钟读一次公开时间线并推送到 <code>POST /api/ingest/posts</code>，服务器只持有 ingest token，不持有 X 会话。信号提取当前走确定性规则回退，配上 <code>LLM_*</code> 后自动升级。</div>
       </section>
 
       <section id="verification">
@@ -239,8 +239,9 @@ sh deploy/rollback.sh deploy/.env.production.previous</pre>
           <tr><td>PostgreSQL E2E</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG</td></tr>
           <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>PostgreSQL 17、migrate、api、worker、web</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
-          <tr><td>真实 X 闭环</td><td><span class="status blocked">WAITING INPUT</span></td><td>真实 User ID、handle、定义、白名单、X/LLM 凭据</td></tr>
-          <tr><td>tibo-reset.ewo.so</td><td><span class="status ok">LIVE</span></td><td>v0.1.1；<code>/</code>、<code>/api/status</code>、<code>/api/forecast</code>、<code>/api/share-card.png</code> 公网 200</td></tr>
+          <tr><td>真实 X 闭环</td><td><span class="status ok">PASS</span></td><td>本地采集 → <code>POST /api/ingest/posts</code> → 入库去重 → 提取 → 新预测 → 页面；首批 20 条真实公开帖</td></tr>
+          <tr><td>LLM 信号提取</td><td><span class="status blocked">WAITING INPUT</span></td><td>未配置 <code>LLM_*</code>，当前走确定性规则回退</td></tr>
+          <tr><td>tibo-reset.ewo.so</td><td><span class="status ok">LIVE</span></td><td>v0.1.2；<code>/</code>、<code>/api/status</code>、<code>/api/forecast</code>、<code>/api/share-card.png</code> 公网 200</td></tr>
         </tbody></table>
       </section>
 
