@@ -11,7 +11,9 @@ import { InboxTimelineSource } from "../apps/worker/src/inbox-source.js";
 import { SqliteWorkerRepository } from "../apps/worker/src/repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "../apps/worker/src/worker.js";
 import {
+  ExternalEventSchema,
   ForecastSnapshotSchema,
+  ShadowForecastV2Schema,
   SourcePostObservedSchema,
   TargetConfigSchema,
 } from "../packages/contracts/dist/index.js";
@@ -36,6 +38,24 @@ const worker = new RadarWorker({
 });
 
 try {
+  const externalObservedAt = new Date().toISOString();
+  await repository.upsertExternalEvents([
+    ExternalEventSchema.parse({
+      eventId: "e2e-openai-status",
+      sourceType: "official_status",
+      provider: "OpenAI",
+      eventType: "codex_incident",
+      title: "E2E-only Codex incident",
+      sourceUrl: "https://status.openai.com/incidents/e2e-only",
+      occurredAt: new Date(Date.now() - 60 * 60 * 1_000).toISOString(),
+      knownAt: externalObservedAt,
+      endedAt: null,
+      relevance: 1,
+      severity: 0.75,
+      metadata: { testOnly: true },
+    }),
+  ]);
+  await repository.recordExternalSuccess("e2e-openai-status", externalObservedAt);
   await worker.runOnce();
 
   const originalText = "A test-only Reset timing note.";
@@ -155,6 +175,33 @@ try {
   assert.equal(snapshot.dataFreshness.status, "fresh");
   assert.equal(snapshot.confirmedSignal, null, "retraction must clear forecast.confirmedSignal");
 
+  const shadowResult = await db.query<{
+    summary_json: string;
+    features_json: string;
+  }>(
+    `SELECT sfr.summary_json, ffs.features_json
+     FROM shadow_forecast_runs sfr
+     JOIN forecast_feature_snapshots ffs ON ffs.snapshot_id = sfr.feature_snapshot_id
+     ORDER BY sfr.generated_at DESC LIMIT 1`,
+  );
+  const shadow = ShadowForecastV2Schema.parse(
+    JSON.parse(shadowResult.rows[0]?.summary_json ?? "null"),
+  );
+  const shadowFeatures = JSON.parse(shadowResult.rows[0]?.features_json ?? "null") as {
+    confirmedResetCount?: number;
+    external?: { openAiIncident?: number };
+    coverage?: { external?: number };
+  };
+  assert.equal(shadow.model.publicImpact, "none");
+  assert.equal(shadow.days.flatMap((day) => day.buckets).length, 28);
+  assert.equal(
+    shadowFeatures.confirmedResetCount,
+    0,
+    "the corrected primary reset must be absent from the latest v2 features",
+  );
+  assert.ok((shadowFeatures.external?.openAiIncident ?? 0) > 0);
+  assert.equal(shadowFeatures.coverage?.external, 1);
+
   const audit = await db.query<{
     status: "candidate_confirmation" | "confirmed_reset" | "retracted";
     supersedes_event_id: string | null;
@@ -183,6 +230,7 @@ try {
   ]);
   assert.equal(status.statusCode, 200);
   assert.equal(forecast.statusCode, 200);
+  assert.equal(forecast.json().model.version, "heuristic-v1", "v2 must remain shadow-only");
   assert.ok(Array.isArray(events.json().items));
   assert.equal(reset.json().state, "retracted");
   assert.equal(reset.json().event.supersedesEventId, confirmedEventId);
@@ -190,7 +238,7 @@ try {
   await app.close();
 
   console.log(
-    "Demo E2E passed: collect -> dedupe/edit/delete -> confirm/retract -> forecast -> API/PNG",
+    "Demo E2E passed: collect -> dedupe/edit/delete -> confirm/retract -> v1 + v2 shadow -> API/PNG",
   );
 } finally {
   await db.close();

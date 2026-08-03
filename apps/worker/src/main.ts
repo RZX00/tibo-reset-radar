@@ -14,6 +14,7 @@ import {
 } from "@tibo-radar/x-source";
 
 import { createDemoFixtures } from "./demo-fixtures.js";
+import { OpenAIStatusSource } from "./external-events.js";
 import { InboxTimelineSource } from "./inbox-source.js";
 import { SqliteWorkerRepository } from "./repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
@@ -49,7 +50,19 @@ export async function createWorker(db: RadarDatabase): Promise<RadarWorker> {
           timeoutMs: positiveIntegerEnv("LLM_TIMEOUT_MS", 30_000),
         })
       : new DeterministicOnlySignalAdapter();
-  return new RadarWorker({ source: timeline, repository, target: config, signalAdapter });
+  const externalEventSource =
+    process.env.FORECAST_V2_OPENAI_STATUS_ENABLED === "true"
+      ? new OpenAIStatusSource({
+          timeoutMs: positiveIntegerEnv("FORECAST_V2_OPENAI_STATUS_TIMEOUT_MS", 10_000),
+        })
+      : undefined;
+  return new RadarWorker({
+    source: timeline,
+    repository,
+    target: config,
+    signalAdapter,
+    ...(externalEventSource ? { externalEventSource } : {}),
+  });
 }
 
 /** Starts the collect/extract/forecast cycle in the background and returns a handle to stop it. */

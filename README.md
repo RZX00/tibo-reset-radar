@@ -3,7 +3,8 @@
 An open-source radar for public Tibo activity and the next Reset window.
 
 ```ascii
-X timeline -> signal extraction -> 28 rolling forecast buckets -> single-page radar
+X timeline -> signal extraction -> heuristic-v1 -> public single-page radar
+                         \-----> survival-v2 -> shadow snapshots/backtest only
 ```
 
 The forecast never uses `100%`. A confirmed Reset is a separate, evidence-backed state.
@@ -82,11 +83,80 @@ harmless; the inbox is keyed by post id.
 pnpm check
 pnpm test:integration
 pnpm model:backtest
+pnpm model:backtest:v2
 ```
 
 The integration test runs against a real SQLite database and proves collect -> edit/delete ->
-extract -> forecast -> API/PNG, including that pushed history lands regardless of push order. The
-backtest only evaluates forecast windows whose full 168-hour horizon has elapsed.
+extract -> V1/V2 shadow forecast -> API/PNG, including that pushed history lands regardless of push
+order. The V1 backtest waits for the full 168-hour horizon; V2 evaluates 24/72/168-hour horizons
+independently as each one matures.
+
+## Forecast V2 shadow strategy
+
+V2 is deliberately isolated from `GET /api/forecast` and the page. It generates 28 contiguous
+six-hour survival buckets and stores both the point-in-time feature snapshot and result in
+`forecast_feature_snapshots` / `shadow_forecast_runs`. The current public model remains
+`heuristic-v1`; every V2 result carries `publicImpact: "none"`.
+
+The outcome is narrowly defined as a confirmed primary Reset with scope `all` or `unknown`.
+`limited`, plan, region and cohort events do not count, and a later retraction removes the event
+through its correction link while leaving both audit records intact. Every feature is computed
+as-of the forecast time, so a correction or external event learned later cannot leak into an
+earlier snapshot.
+
+V2 currently records these feature families:
+
+- historical reset intervals, quantiles, right-censored exposure and smoothed duration hazards;
+- Tibo's own 90-day UTC posting/reply rhythm as a non-zero, normalized circadian multiplier;
+- six/24-hour post and reply bursts plus unique conversations, without collecting public replies
+  from other users;
+- time-decayed reset wording, incidents and milestones from the existing signal extractor;
+- optional OpenAI incidents from the public official status feed and operator-imported competitor
+  releases that link to an official source.
+
+Until there are at least 20 effective confirmed resets, maturity is
+`insufficient_history`. At 20 or more it is still `shadow`: contextual coefficients remain exactly
+zero unless a version has been written to `forecast_model_versions` with a backtested status.
+Competitor releases therefore cannot change probability merely because they were collected.
+Calibration is only representable from 50 effective resets onward. No code path currently trains
+or promotes a model automatically.
+
+Enable the unauthenticated official OpenAI status collector explicitly:
+
+```dotenv
+FORECAST_V2_OPENAI_STATUS_ENABLED=true
+FORECAST_V2_OPENAI_STATUS_TIMEOUT_MS=10000
+```
+
+For a competitor release, import an operator-reviewed JSON file; `knownAt` must be when this radar
+first learned the event, not a backdated publication timestamp:
+
+```json
+[
+  {
+    "eventId": "anthropic:official-release:example",
+    "sourceType": "official_release",
+    "provider": "Anthropic",
+    "eventType": "model_release",
+    "title": "Official release title",
+    "sourceUrl": "https://www.anthropic.com/news/example",
+    "occurredAt": "2026-08-03T00:00:00.000Z",
+    "knownAt": "2026-08-03T00:05:00.000Z",
+    "endedAt": null,
+    "relevance": 0.8,
+    "severity": 0.7,
+    "metadata": {}
+  }
+]
+```
+
+```bash
+pnpm external:import-releases -- ./official-releases.json
+```
+
+Grok and full public-comment collection are intentionally absent. The lower-cost interaction proxy
+is Tibo's own reply rate and conversation spread; this is auditable and does not require estimating
+the sentiment or pressure of an unbounded audience.
 
 ## Operations
 
@@ -99,7 +169,7 @@ The Chinese-first architecture, model card, data policy, verification evidence, 
 
 ## Boundaries
 
-- Official X API only; no scraping or browser automation.
+- Official X API and optional official status/release sources only; no scraping or browser automation.
 - No login, payment, subscription, email, paid API key, or webhook surface.
 - No dependency on the ewo monorepo, database, runtime, or credentials.
 - No real X history or secrets in Git.

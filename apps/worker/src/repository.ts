@@ -1,19 +1,34 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  type ExternalEvent,
+  ExternalEventSchema,
   type ForecastSnapshot,
   ForecastSnapshotSchema,
+  ForecastV2CoefficientsSchema,
+  type ForecastV2FeatureSnapshot,
+  ForecastV2ModelParametersSchema,
   type ResetEvent,
+  type ShadowForecastV2,
   SignalExtractionSchema,
   type SourcePostObserved,
   SourcePostObservedSchema,
 } from "@tibo-radar/contracts";
 import { nowIso, parseJsonColumn, type RadarDatabase } from "@tibo-radar/db";
-import type { PersistedForecastSignal } from "@tibo-radar/forecast";
+import {
+  FORECAST_V2_FEATURE_VERSION,
+  type ForecastV2ModelParameters,
+  type ForecastV2Post,
+  type ForecastV2ResetRecord,
+  type ForecastV2Signal,
+  type PersistedForecastSignal,
+} from "@tibo-radar/forecast";
 import type { ConfirmationDecision, SignalExtractionResult } from "@tibo-radar/signal";
 import { SqliteSourceRepository, type TimelineCollection } from "@tibo-radar/x-source";
 
 const FORECAST_SIGNAL_WINDOW_MS = 168 * 60 * 60 * 1_000;
+const FORECAST_V2_POST_WINDOW_MS = 90 * 24 * 60 * 60 * 1_000;
+const FORECAST_V2_EXTERNAL_WINDOW_MS = 180 * 24 * 60 * 60 * 1_000;
 
 export interface ForecastContext {
   signals: PersistedForecastSignal[];
@@ -22,6 +37,16 @@ export interface ForecastContext {
   lastObservedAt: string | null;
   lastPublicActivityAt: string | null;
   consecutiveFailures: number;
+}
+
+export interface ForecastV2Context {
+  posts: ForecastV2Post[];
+  signals: ForecastV2Signal[];
+  resetEvents: ForecastV2ResetRecord[];
+  externalEvents: ExternalEvent[];
+  targetCoverage: number;
+  externalCoverage: number;
+  parameters?: ForecastV2ModelParameters;
 }
 
 export class SqliteWorkerRepository {
@@ -45,6 +70,79 @@ export class SqliteWorkerRepository {
 
   async recordFailure(source: string, code: string) {
     await this.source.recordFailure(source, code);
+  }
+
+  async upsertExternalEvents(events: readonly ExternalEvent[]): Promise<void> {
+    const validated = events.map((event) => ExternalEventSchema.parse(event));
+    await this.db.transaction(async () => {
+      for (const event of validated) {
+        const contentHash = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+        await this.db.query(
+          `INSERT INTO external_events (
+             event_id, source_type, provider, event_type, title, source_url,
+             occurred_at, known_at, ended_at, relevance, severity, metadata_json,
+             content_hash, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+           ON CONFLICT (event_id) DO UPDATE SET
+             source_type = excluded.source_type,
+             provider = excluded.provider,
+             event_type = excluded.event_type,
+             title = excluded.title,
+             source_url = excluded.source_url,
+             occurred_at = excluded.occurred_at,
+             known_at = MIN(external_events.known_at, excluded.known_at),
+             ended_at = excluded.ended_at,
+             relevance = excluded.relevance,
+             severity = excluded.severity,
+             metadata_json = excluded.metadata_json,
+             content_hash = excluded.content_hash,
+             updated_at = excluded.updated_at`,
+          [
+            event.eventId,
+            event.sourceType,
+            event.provider,
+            event.eventType,
+            event.title,
+            event.sourceUrl,
+            event.occurredAt,
+            event.knownAt,
+            event.endedAt,
+            event.relevance,
+            event.severity,
+            JSON.stringify(event.metadata),
+            contentHash,
+            nowIso(),
+          ],
+        );
+      }
+    });
+  }
+
+  async recordExternalSuccess(source: string, observedAt: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO external_source_status (
+         source, consecutive_failures, last_success_at, last_error_code, updated_at
+       ) VALUES ($1,0,$2,NULL,$2)
+       ON CONFLICT (source) DO UPDATE SET
+         consecutive_failures = 0,
+         last_success_at = excluded.last_success_at,
+         last_error_code = NULL,
+         updated_at = excluded.updated_at`,
+      [source, observedAt],
+    );
+  }
+
+  async recordExternalFailure(source: string, code: string, observedAt: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO external_source_status (
+         source, consecutive_failures, last_success_at, last_error_code, updated_at
+       ) VALUES ($1,1,NULL,$2,$3)
+       ON CONFLICT (source) DO UPDATE SET
+         consecutive_failures = external_source_status.consecutive_failures + 1,
+         last_error_code = excluded.last_error_code,
+         updated_at = excluded.updated_at`,
+      [source, code, observedAt],
+    );
   }
 
   async getPendingPosts(limit = 100): Promise<SourcePostObserved[]> {
@@ -224,6 +322,227 @@ export class SqliteWorkerRepository {
     };
   }
 
+  async getForecastV2Context(generatedAt: string): Promise<ForecastV2Context> {
+    const generatedMs = Date.parse(generatedAt);
+    if (!Number.isFinite(generatedMs)) throw new Error("generatedAt must be a valid ISO date-time");
+    const postWindowStart = new Date(generatedMs - FORECAST_V2_POST_WINDOW_MS).toISOString();
+    const signalWindowStart = new Date(generatedMs - FORECAST_SIGNAL_WINDOW_MS).toISOString();
+    const externalWindowStart = new Date(
+      generatedMs - FORECAST_V2_EXTERNAL_WINDOW_MS,
+    ).toISOString();
+    const [postsResult, signalsResult, resetsResult, externalResult, statusResult, modelResult] =
+      await Promise.all([
+        this.db.query<{
+          post_id: string;
+          created_at: string;
+          source_kind: ForecastV2Post["sourceKind"];
+          conversation_id: string | null;
+        }>(
+          `SELECT post_id, created_at, source_kind, conversation_id
+           FROM source_posts
+           WHERE deleted_at IS NULL AND created_at >= $1 AND created_at <= $2
+           ORDER BY created_at ASC`,
+          [postWindowStart, generatedAt],
+        ),
+        this.db.query<{
+          post_id: string;
+          extracted_at: string;
+          result_json: string;
+        }>(
+          `WITH latest AS (
+             SELECT post_id, MAX(extracted_at) AS extracted_at
+             FROM signal_extractions
+             WHERE extracted_at >= $1 AND extracted_at <= $2
+             GROUP BY post_id
+           )
+           SELECT se.post_id, se.extracted_at, se.result_json
+           FROM latest
+           JOIN signal_extractions se
+             ON se.post_id = latest.post_id AND se.extracted_at = latest.extracted_at
+           JOIN source_posts sp ON sp.post_id = se.post_id
+           WHERE sp.deleted_at IS NULL
+           ORDER BY se.extracted_at ASC`,
+          [signalWindowStart, generatedAt],
+        ),
+        this.db.query<{
+          event_id: string;
+          status: ForecastV2ResetRecord["status"];
+          occurred_at: string | null;
+          scope: string;
+          supersedes_event_id: string | null;
+          updated_at: string;
+        }>(
+          `SELECT event_id, status, occurred_at, scope, supersedes_event_id, updated_at
+           FROM reset_events WHERE updated_at <= $1
+           ORDER BY updated_at ASC`,
+          [generatedAt],
+        ),
+        this.db.query<{
+          event_id: string;
+          source_type: ExternalEvent["sourceType"];
+          provider: string;
+          event_type: string;
+          title: string;
+          source_url: string;
+          occurred_at: string;
+          known_at: string;
+          ended_at: string | null;
+          relevance: number;
+          severity: number;
+          metadata_json: string;
+        }>(
+          `SELECT event_id, source_type, provider, event_type, title, source_url,
+                  occurred_at, known_at, ended_at, relevance, severity, metadata_json
+           FROM external_events
+           WHERE known_at >= $1 AND known_at <= $2 AND occurred_at <= $2
+           ORDER BY known_at ASC`,
+          [externalWindowStart, generatedAt],
+        ),
+        this.db.query<{
+          target_last_success_at: string | null;
+          target_failures: number;
+          external_last_success_at: string | null;
+          external_failures: number;
+        }>(
+          `SELECT
+             (SELECT MAX(last_success_at) FROM collector_cursors) AS target_last_success_at,
+             COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0)
+               AS target_failures,
+             (SELECT MAX(last_success_at) FROM external_source_status)
+               AS external_last_success_at,
+             COALESCE((SELECT MAX(consecutive_failures) FROM external_source_status), 0)
+               AS external_failures`,
+        ),
+        this.db.query<{
+          model_version: string;
+          validation_status: "backtested" | "calibrated";
+          confirmed_reset_count: number;
+          parameters_json: string;
+        }>(
+          `SELECT model_version, validation_status, confirmed_reset_count, parameters_json
+           FROM forecast_model_versions
+           WHERE feature_version = $1
+             AND validation_status IN ('backtested', 'calibrated')
+             AND (training_cutoff IS NULL OR training_cutoff <= $2)
+           ORDER BY created_at DESC LIMIT 1`,
+          [FORECAST_V2_FEATURE_VERSION, generatedAt],
+        ),
+      ]);
+
+    const status = statusResult.rows[0];
+    const model = modelResult.rows[0];
+    const parameters = model
+      ? ForecastV2ModelParametersSchema.parse({
+          modelVersion: model.model_version,
+          validationStatus: model.validation_status,
+          trainedResetCount: model.confirmed_reset_count,
+          coefficients: ForecastV2CoefficientsSchema.parse(
+            parseJsonColumn(model.parameters_json, {}),
+          ),
+        })
+      : undefined;
+    return {
+      posts: postsResult.rows.map((row) => ({
+        postId: row.post_id,
+        createdAt: row.created_at,
+        sourceKind: row.source_kind,
+        conversationId: row.conversation_id,
+      })),
+      signals: signalsResult.rows.map((row) => ({
+        postId: row.post_id,
+        observedAt: row.extracted_at,
+        extraction: SignalExtractionSchema.parse(parseJsonColumn(row.result_json, {})),
+      })),
+      resetEvents: resetsResult.rows.map((row) => ({
+        eventId: row.event_id,
+        status: row.status,
+        occurredAt: row.occurred_at,
+        knownAt: row.updated_at,
+        scope: row.scope,
+        supersedesEventId: row.supersedes_event_id,
+      })),
+      externalEvents: externalResult.rows.map((row) =>
+        ExternalEventSchema.parse({
+          eventId: row.event_id,
+          sourceType: row.source_type,
+          provider: row.provider,
+          eventType: row.event_type,
+          title: row.title,
+          sourceUrl: row.source_url,
+          occurredAt: row.occurred_at,
+          knownAt: row.known_at,
+          endedAt: row.ended_at,
+          relevance: row.relevance,
+          severity: row.severity,
+          metadata: parseJsonColumn(row.metadata_json, {}),
+        }),
+      ),
+      targetCoverage: freshnessCoverage(
+        generatedMs,
+        status?.target_last_success_at ?? null,
+        status?.target_failures ?? 0,
+      ),
+      externalCoverage: freshnessCoverage(
+        generatedMs,
+        status?.external_last_success_at ?? null,
+        status?.external_failures ?? 0,
+      ),
+      ...(parameters ? { parameters } : {}),
+    };
+  }
+
+  async saveShadowForecast(
+    features: ForecastV2FeatureSnapshot,
+    forecast: ShadowForecastV2,
+  ): Promise<void> {
+    await this.db.transaction(async () => {
+      const existing = await this.db.query<{ snapshot_id: string }>(
+        `SELECT snapshot_id FROM forecast_feature_snapshots
+         WHERE feature_version = $1 AND input_hash = $2 LIMIT 1`,
+        [features.featureVersion, features.inputHash],
+      );
+      const snapshotId = existing.rows[0]?.snapshot_id ?? features.snapshotId;
+      if (!existing.rows[0]) {
+        await this.db.query(
+          `INSERT INTO forecast_feature_snapshots (
+             snapshot_id, generated_at, feature_version, model_maturity,
+             confirmed_reset_count, target_coverage, external_coverage,
+             input_hash, features_json
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            snapshotId,
+            features.generatedAt,
+            features.featureVersion,
+            features.maturity,
+            features.confirmedResetCount,
+            features.coverage.target,
+            features.coverage.external,
+            features.inputHash,
+            JSON.stringify(features),
+          ],
+        );
+      }
+      await this.db.query(
+        `INSERT INTO shadow_forecast_runs (
+           run_id, generated_at, horizon_start, horizon_end, model_version,
+           model_maturity, feature_snapshot_id, input_hash, summary_json
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (run_id) DO UPDATE SET summary_json = excluded.summary_json`,
+        [
+          forecast.runId,
+          forecast.generatedAt,
+          forecast.horizonStart,
+          forecast.horizonEnd,
+          forecast.model.version,
+          forecast.model.maturity,
+          snapshotId,
+          features.inputHash,
+          JSON.stringify(forecast),
+        ],
+      );
+    });
+  }
+
   async saveForecast(snapshot: ForecastSnapshot, inputHash: string): Promise<void> {
     await this.db.transaction(async () => {
       await this.db.query(
@@ -316,4 +635,17 @@ async function insertBucket(
       JSON.stringify(bucket.topReasonCodes),
     ],
   );
+}
+
+function freshnessCoverage(
+  generatedMs: number,
+  lastSuccessAt: string | null,
+  consecutiveFailures: number,
+): number {
+  if (lastSuccessAt === null) return 0;
+  const lastSuccessMs = Date.parse(lastSuccessAt);
+  if (!Number.isFinite(lastSuccessMs) || lastSuccessMs > generatedMs) return 0;
+  const ageMs = generatedMs - lastSuccessMs;
+  const freshness = ageMs <= 10 * 60 * 1_000 ? 1 : ageMs <= 30 * 60 * 1_000 ? 0.7 : 0.35;
+  return Math.max(0, freshness * 0.7 ** Math.min(Math.max(consecutiveFailures, 0), 3));
 }

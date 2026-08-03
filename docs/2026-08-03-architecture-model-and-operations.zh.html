@@ -186,21 +186,22 @@ age > 3h / none        -> quiet</pre></div>
         <table><thead><tr><th>对象</th><th>保存</th><th>删除/更新行为</th></tr></thead><tbody>
           <tr><td>公开帖子</td><td>ID、来源、哈希、必要展示正文、作者公开信息</td><td>收到删除 tombstone 时可保留审计行并清空 <code>text_ephemeral</code>；删除同步链路尚未完成</td></tr>
           <tr><td>信号提取</td><td>Schema、prompt、method、model、input version/hash、source hash、结果</td><td>编辑后的内容哈希不同，必须重新提取</td></tr>
-          <tr><td>预测</td><td>快照与 28 桶、输入哈希、模型版本、新鲜度</td><td>可按固定输入复算；不保存秘密</td></tr>
+          <tr><td>预测</td><td>公共 V1 快照；V2 影子特征快照与 28 桶、输入哈希、成熟度</td><td>V2 不进入公共 API；可按 as-of 输入复算；不保存秘密</td></tr>
           <tr><td>运行凭据</td><td>只在忽略的环境文件或主机 secret store</td><td>禁止进入 Git、日志、错误响应和分享图</td></tr>
         </tbody></table>
       </section>
 
       <section id="model">
-        <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 模型卡与回测</h2></div><div class="number">06</div></div>
+        <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 与 survival-v2 影子模型</h2></div><div class="number">06</div></div>
         <div class="grid-2">
-          <div class="box"><h3>适用范围</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>不是个体账户到账时间承诺，不替代权威确认。</li></ul></div>
-          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时信号档位仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
+          <div class="box"><h3>公共 V1</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>权重是启发式，不声明已校准；不替代权威确认。</li></ul></div>
+          <div class="box"><h3>V2 影子边界</h3><ul><li>按 6 小时离散生存模型计算历史频率与作息。</li><li>只把 <code>all/unknown</code> 的有效确认作为主 Reset，撤回按更正关系排除。</li><li>少于 20 次确认标记 <code>insufficient_history</code>；外部/文本系数保持为零，未回测不得进入公共 API。</li></ul></div>
         </div>
-        <pre>DATABASE_URL=... pnpm model:backtest
+        <pre>RADAR_DB_PATH=... pnpm model:backtest
+RADAR_DB_PATH=... pnpm model:backtest:v2
 
-成熟条件: horizon_end <= now()
-outcome: confirmed_reset occurred in [horizon_start, horizon_end)
+V2 horizons: 24h / 72h / 168h（各自成熟后才计入）
+V2 outcome: 未被撤回的 primary confirmed_reset occurred in [start, end)
 metrics: sample size / Brier score / log loss / 10-bin calibration
 empty: status = no_matured_runs</pre>
       </section>
@@ -235,8 +236,8 @@ sh deploy/rollback.sh deploy/.env.production.previous</pre>
       <section id="verification">
         <div class="section-head"><div><span class="kicker">Evidence</span><h2>首发验证证据</h2></div><div class="number">09</div></div>
         <table><thead><tr><th>检查</th><th>当前结果</th><th>证据</th></tr></thead><tbody>
-          <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、Forecast、Collector、API、Web；250 组预测属性输入</td></tr>
-          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG；含乱序回填</td></tr>
+          <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、V1/V2 Forecast、Collector、API、Web；含 250 组 V1 预测属性输入</td></tr>
+          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → confirm/retract → V1 + V2 shadow → API/PNG；含乱序回填</td></tr>
           <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>单镜像：迁移 + API + 静态页 + 采集循环同进程</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
           <tr><td>真实 X 闭环</td><td><span class="status ok">PASS</span></td><td>本地采集 → <code>POST /api/ingest/posts</code> → 入库去重 → 提取 → 新预测 → 页面；首批 20 条真实公开帖</td></tr>

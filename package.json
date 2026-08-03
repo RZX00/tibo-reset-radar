@@ -26,6 +26,8 @@
     "db:status": "tsx scripts/migrate.ts --status",
     "contracts:check": "tsx scripts/check-contracts.ts",
     "model:backtest": "pnpm build:packages && tsx scripts/backtest.ts",
+    "model:backtest:v2": "pnpm build:packages && tsx scripts/backtest-v2.ts",
+    "external:import-releases": "pnpm build:packages && tsx scripts/import-official-releases.ts",
     "oss:scan": "tsx scripts/scan-oss-surface.ts",
     "check": "pnpm lint && pnpm build && pnpm typecheck:all && pnpm test:all && pnpm oss:scan"
   },

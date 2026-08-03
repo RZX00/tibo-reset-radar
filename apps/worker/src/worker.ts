@@ -1,10 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { SourcePostObserved, TargetConfig } from "@tibo-radar/contracts";
-import { deriveActivityStatus, deriveFreshness, generateForecast } from "@tibo-radar/forecast";
+import {
+  deriveActivityStatus,
+  deriveFreshness,
+  generateForecast,
+  generateShadowForecastV2,
+} from "@tibo-radar/forecast";
 import { evaluateConfirmation, extractSignal, type SignalModelAdapter } from "@tibo-radar/signal";
 import type { TimelineSource } from "@tibo-radar/x-source";
 
+import type { ExternalEventSource } from "./external-events.js";
 import type { SqliteWorkerRepository } from "./repository.js";
 
 export interface RadarWorkerOptions {
@@ -12,6 +18,7 @@ export interface RadarWorkerOptions {
   repository: SqliteWorkerRepository;
   target: TargetConfig;
   signalAdapter: SignalModelAdapter;
+  externalEventSource?: ExternalEventSource;
   now?: () => Date;
 }
 
@@ -20,6 +27,7 @@ export class RadarWorker {
   readonly #repository: SqliteWorkerRepository;
   readonly #target: TargetConfig;
   readonly #signalAdapter: SignalModelAdapter;
+  readonly #externalEventSource: ExternalEventSource | undefined;
   readonly #now: () => Date;
   readonly #cursorSource: string;
 
@@ -28,6 +36,7 @@ export class RadarWorker {
     this.#repository = options.repository;
     this.#target = options.target;
     this.#signalAdapter = options.signalAdapter;
+    this.#externalEventSource = options.externalEventSource;
     this.#now = options.now ?? (() => new Date());
     this.#cursorSource = `x:timeline:${options.target.target.userId}`;
   }
@@ -42,6 +51,7 @@ export class RadarWorker {
       });
       await this.#repository.persistBatch(this.#cursorSource, collection);
       await this.processPendingSignals();
+      await this.collectExternalEvents(signal);
       await this.generateForecast();
     } catch (error) {
       await this.#repository.recordFailure(this.#cursorSource, errorCode(error));
@@ -98,6 +108,42 @@ export class RadarWorker {
       previousSnapshot: context.previousSnapshot,
     });
     await this.#repository.saveForecast(snapshot, inputHash);
+    try {
+      const shadowContext = await this.#repository.getForecastV2Context(generatedAt);
+      const shadow = generateShadowForecastV2({
+        runId: randomUUID(),
+        snapshotId: randomUUID(),
+        generatedAt,
+        ...shadowContext,
+      });
+      await this.#repository.saveShadowForecast(shadow.features, shadow.forecast);
+    } catch (error) {
+      console.error("forecast v2 shadow failed", errorCode(error));
+    }
+  }
+
+  private async collectExternalEvents(signal?: AbortSignal): Promise<void> {
+    if (!this.#externalEventSource) return;
+    const observedAt = this.#now().toISOString();
+    try {
+      const events = await this.#externalEventSource.collect({
+        observedAt,
+        ...(signal ? { signal } : {}),
+      });
+      await this.#repository.upsertExternalEvents(events);
+      await this.#repository.recordExternalSuccess(this.#externalEventSource.sourceId, observedAt);
+    } catch (error) {
+      try {
+        await this.#repository.recordExternalFailure(
+          this.#externalEventSource.sourceId,
+          errorCode(error),
+          observedAt,
+        );
+      } catch (recordError) {
+        console.error("forecast v2 external failure recording failed", errorCode(recordError));
+      }
+      console.error("forecast v2 external collection failed", errorCode(error));
+    }
   }
 }
 

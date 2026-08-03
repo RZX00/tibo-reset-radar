@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./forecast-v2.js";
+
 export const ActivityStatusSchema = z.enum(["active", "cooling", "quiet", "data_delayed"]);
 export type ActivityStatus = z.infer<typeof ActivityStatusSchema>;
 
