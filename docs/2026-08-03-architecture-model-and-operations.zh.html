@@ -128,7 +128,7 @@
 |- database ----------------------- dedicated PostgreSQL 17 + volume
 |- network ------------------------ dedicated Compose network
 |- secrets ------------------------ ignored .env / host secret store
-|- public host -------------------- radar.ewo.so (pending host + DNS)
+|- public host -------------------- tibo-reset.ewo.so (live, dedicated host)
 |- ewo dependency ----------------- none
 \- prohibited runtime coupling ---- ewo DB / API / cookies / packages / keys</pre>
         <div class="callout"><strong>当前发布门禁：</strong> <code>config/target.json</code> 仍是 Demo 身份。切换 live 前必须补齐准确 User ID、handle、Reset 定义、权威账号白名单和 banked reset 规则。</div>
@@ -229,7 +229,7 @@ sh deploy/deploy.sh deploy/.env.production
 
 # 回滚应用镜像；数据库迁移保持向前兼容
 sh deploy/rollback.sh deploy/.env.production.previous</pre>
-        <div class="callout"><strong>radar.ewo.so 当前未发布：</strong>仓库已经具备镜像、Compose、健康检查和回滚入口；仍缺独立主机访问、DNS 指向、TLS/反向代理配置以及真实目标与运行凭据。</div>
+        <div class="callout"><strong>tibo-reset.ewo.so 已发布（2026-08-03）：</strong>v0.1.1 镜像运行在独立主机上，Cloudflare 代理 A 记录 + Let's Encrypt origin 证书 + OpenResty 反向代理到 <code>127.0.0.1:4173</code>，四条冒烟 URL 全部 200。实例仍是 Demo 模式；切到真实数据只差目标身份与 X/LLM 凭据。</div>
       </section>
 
       <section id="verification">
@@ -240,7 +240,7 @@ sh deploy/rollback.sh deploy/.env.production.previous</pre>
           <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>PostgreSQL 17、migrate、api、worker、web</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
           <tr><td>真实 X 闭环</td><td><span class="status blocked">WAITING INPUT</span></td><td>真实 User ID、handle、定义、白名单、X/LLM 凭据</td></tr>
-          <tr><td>radar.ewo.so</td><td><span class="status blocked">WAITING INFRA</span></td><td>独立主机、DNS、TLS 与发布授权尚未提供</td></tr>
+          <tr><td>tibo-reset.ewo.so</td><td><span class="status ok">LIVE</span></td><td>v0.1.1；<code>/</code>、<code>/api/status</code>、<code>/api/forecast</code>、<code>/api/share-card.png</code> 公网 200</td></tr>
         </tbody></table>
       </section>
 
