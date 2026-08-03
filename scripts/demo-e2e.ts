@@ -9,6 +9,7 @@ import pg from "pg";
 import { buildServer } from "../apps/api/src/server.js";
 import { PostgresRadarReadStore } from "../apps/api/src/store.js";
 import { createDemoFixtures } from "../apps/worker/src/demo-fixtures.js";
+import { InboxTimelineSource } from "../apps/worker/src/inbox-source.js";
 import { PostgresWorkerRepository } from "../apps/worker/src/repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "../apps/worker/src/worker.js";
 import {
@@ -88,6 +89,23 @@ try {
   );
   assert.deepEqual(deleted.rows[0], { deleted: true, text_cleared: true });
 
+  // A collector pushes the newest posts first and history afterwards. Both have to land, so the
+  // inbox drain must not be a since-id watermark.
+  const inboxWorker = new RadarWorker({
+    source: new InboxTimelineSource({ reader: repository }),
+    repository,
+    target,
+    signalAdapter: new DeterministicOnlySignalAdapter(),
+  });
+  await pushToInbox(pool, target, "2084196918071357707", "Newest pushed post.");
+  await inboxWorker.runOnce();
+  await pushToInbox(pool, target, "2071381664853319742", "Older backfilled post.");
+  await inboxWorker.runOnce();
+  const backfilled = await pool.query<{ count: string }>(
+    "SELECT count(*) FROM source_posts WHERE post_id IN ('2084196918071357707', '2071381664853319742')",
+  );
+  assert.equal(Number(backfilled.rows[0]?.count), 2, "backfilled history must not be stranded");
+
   const snapshotResult = await pool.query<{ summary_json: unknown }>(
     "SELECT summary_json FROM forecast_runs WHERE status = 'completed' ORDER BY generated_at DESC LIMIT 1",
   );
@@ -115,6 +133,37 @@ try {
   console.log("Demo E2E passed: collect -> dedupe/edit/delete -> extract -> forecast -> API/PNG");
 } finally {
   await pool.end();
+}
+
+async function pushToInbox(
+  target_pool: pg.Pool,
+  config: { target: { userId: string; handle: string; displayName: string } },
+  postId: string,
+  text: string,
+): Promise<void> {
+  const payload = SourcePostObservedSchema.parse({
+    postId,
+    authorId: config.target.userId,
+    authorDisplayName: config.target.displayName,
+    authorHandle: config.target.handle,
+    authorAvatarUrl: null,
+    sourceKind: "post",
+    conversationId: null,
+    referencedPostIds: [],
+    language: "en",
+    sourceUrl: `https://x.com/${config.target.handle}/status/${postId}`,
+    text,
+    contentHash: createHash("sha256").update(text).digest("hex"),
+    createdAt: new Date().toISOString(),
+    observedAt: new Date().toISOString(),
+    editedAt: null,
+    deletedAt: null,
+  });
+  await target_pool.query(
+    `INSERT INTO ingest_inbox (post_id, payload) VALUES ($1, $2::jsonb)
+     ON CONFLICT (post_id) DO UPDATE SET payload = EXCLUDED.payload`,
+    [postId, JSON.stringify(payload)],
+  );
 }
 
 function loadLocalEnv(): void {

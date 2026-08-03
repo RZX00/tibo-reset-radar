@@ -59,14 +59,18 @@ export class PostgresWorkerRepository {
     return result.rows.map(mapPostRow);
   }
 
-  async readInbox(sinceId: string | null, limit: number): Promise<unknown[]> {
-    // post_id is a snowflake, so ordering has to be numeric — lexical order breaks across digit
-    // counts and would silently strand the oldest pushed posts behind the cursor.
+  async readInbox(_sinceId: string | null, limit: number): Promise<unknown[]> {
+    // Outstanding rows, not "newer than the cursor". A collector may push history at any time —
+    // a since-id watermark would silently strand every backfilled post older than what it already
+    // saw. Comparing against what actually landed also picks up edits, whose content hash changes.
+    // post_id is a snowflake, so ordering is numeric; lexical order breaks across digit counts.
     const result = await this.pool.query<{ payload: unknown }>(
-      `SELECT payload FROM ingest_inbox
-       WHERE post_id ~ '^[0-9]+$' AND ($1::text IS NULL OR post_id::numeric > $1::numeric)
-       ORDER BY post_id::numeric ASC LIMIT $2`,
-      [sinceId, limit],
+      `SELECT inbox.payload FROM ingest_inbox inbox
+       LEFT JOIN source_posts stored ON stored.post_id = inbox.post_id
+       WHERE inbox.post_id ~ '^[0-9]+$'
+         AND (stored.post_id IS NULL OR stored.content_hash IS DISTINCT FROM inbox.payload->>'contentHash')
+       ORDER BY inbox.post_id::numeric ASC LIMIT $1`,
+      [limit],
     );
     return result.rows.map((row) => row.payload);
   }
