@@ -15,15 +15,38 @@ Requirements: Node.js 22, pnpm 10.4, Docker, and Docker Compose.
 ```bash
 cp .env.example .env
 pnpm install --frozen-lockfile
-docker compose up -d postgres
-pnpm db:migrate
-pnpm dev:api
-pnpm dev:worker
-pnpm dev:web
+docker compose up -d --build
 ```
 
-The checked-in target uses Demo mode. Replace `config/target.json` with the public X user ID,
-handle, authoritative source IDs, and Reset definition before setting `DEMO_MODE=false`.
+Open `http://127.0.0.1:4173`. The checked-in target and page are visibly marked as Demo data.
+
+For process-level development, start PostgreSQL with Compose, then run `pnpm db:migrate`,
+`pnpm dev:api`, `pnpm dev:worker`, and `pnpm dev:web` in separate terminals. Entrypoints load the
+ignored root `.env` automatically.
+
+Before live mode, replace `config/target.json` with the exact public X user ID, handle,
+authoritative source IDs, Reset definition, and banked-reset policy. Add X/LLM credentials only to
+the ignored environment file, then change both target mode and `DEMO_MODE` deliberately.
+
+## Verification
+
+```bash
+pnpm check
+pnpm test:integration
+pnpm model:backtest
+```
+
+The integration test uses PostgreSQL and proves collect -> edit/delete -> extract -> forecast ->
+API/PNG. The backtest only evaluates forecast windows whose full 168-hour horizon has elapsed.
+
+## Operations
+
+Tagged releases publish immutable node and web images to GHCR. Production deployment and rollback
+use `deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and
+`main` image tags are rejected.
+
+The Chinese-first architecture, model card, data policy, verification evidence, and runbook are in
+[`docs/2026-08-03-architecture-model-and-operations.zh.html`](docs/2026-08-03-architecture-model-and-operations.zh.html).
 
 ## Boundaries
 
