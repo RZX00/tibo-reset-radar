@@ -1,0 +1,45 @@
+{
+  "project_id": "tibo-reset-radar",
+  "mode": "ghcr-docker-compose",
+  "local": {
+    "repo_root": "/mnt/e/app/tibo-reset-radar",
+    "build_command": "git tag -a v0.1.0 -m 'v0.1.0' && git push origin v0.1.0 && printf '0.1.0\\n' > deploy/.release-tag",
+    "tag_file": "deploy/.release-tag",
+    "deploy_bundle_paths": [
+      "deploy"
+    ]
+  },
+  "remote": {
+    "ssh_target": "gtd",
+    "user": "root",
+    "host": "8.217.57.141",
+    "root": "/app/tibo-reset-radar",
+    "bundle_root": "/app/tibo-reset-radar",
+    "compose_file": "deploy/compose.production.yml",
+    "env_file": "deploy/.env.production",
+    "edge_config": "/opt/1panel/apps/openresty/openresty/conf/conf.d/radar.ewo.so.conf"
+  },
+  "release": {
+    "deploy_command": "sh deploy/deploy.sh deploy/.env.production",
+    "smoke": [
+      "https://radar.ewo.so/",
+      "https://radar.ewo.so/api/status",
+      "https://radar.ewo.so/api/forecast?timezone=Asia%2FShanghai",
+      "https://radar.ewo.so/api/share-card.png"
+    ]
+  },
+  "diagnostics": {
+    "compose_services": [
+      "postgres",
+      "api",
+      "worker",
+      "web"
+    ],
+    "log_commands": {
+      "api": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 api",
+      "worker": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 worker",
+      "web": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 web",
+      "postgres": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 postgres"
+    }
+  }
+}
