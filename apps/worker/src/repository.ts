@@ -8,10 +8,12 @@ import {
   type SourcePostObserved,
   SourcePostObservedSchema,
 } from "@tibo-radar/contracts";
+import { nowIso, parseJsonColumn, type RadarDatabase } from "@tibo-radar/db";
 import type { PersistedForecastSignal } from "@tibo-radar/forecast";
 import type { ConfirmationDecision, SignalExtractionResult } from "@tibo-radar/signal";
-import { PostgresSourceRepository, type TimelineCollection } from "@tibo-radar/x-source";
-import type { Pool, PoolClient } from "pg";
+import { SqliteSourceRepository, type TimelineCollection } from "@tibo-radar/x-source";
+
+const FORECAST_SIGNAL_WINDOW_MS = 168 * 60 * 60 * 1_000;
 
 export interface ForecastContext {
   signals: PersistedForecastSignal[];
@@ -22,11 +24,11 @@ export interface ForecastContext {
   consecutiveFailures: number;
 }
 
-export class PostgresWorkerRepository {
-  readonly source: PostgresSourceRepository;
+export class SqliteWorkerRepository {
+  readonly source: SqliteSourceRepository;
 
-  constructor(private readonly pool: Pool) {
-    this.source = new PostgresSourceRepository(pool);
+  constructor(private readonly db: RadarDatabase) {
+    this.source = new SqliteSourceRepository(db);
   }
 
   async getCursor(source: string) {
@@ -46,7 +48,7 @@ export class PostgresWorkerRepository {
   }
 
   async getPendingPosts(limit = 100): Promise<SourcePostObserved[]> {
-    const result = await this.pool.query<SourcePostRow>(
+    const result = await this.db.query<SourcePostRow>(
       `SELECT sp.* FROM source_posts sp
        WHERE sp.deleted_at IS NULL AND sp.text_ephemeral IS NOT NULL
          AND NOT EXISTS (
@@ -64,23 +66,24 @@ export class PostgresWorkerRepository {
     // a since-id watermark would silently strand every backfilled post older than what it already
     // saw. Comparing against what actually landed also picks up edits, whose content hash changes.
     // post_id is a snowflake, so ordering is numeric; lexical order breaks across digit counts.
-    const result = await this.pool.query<{ payload: unknown }>(
+    const result = await this.db.query<{ payload: string }>(
       `SELECT inbox.payload FROM ingest_inbox inbox
        LEFT JOIN source_posts stored ON stored.post_id = inbox.post_id
-       WHERE inbox.post_id ~ '^[0-9]+$'
-         AND (stored.post_id IS NULL OR stored.content_hash IS DISTINCT FROM inbox.payload->>'contentHash')
-       ORDER BY inbox.post_id::numeric ASC LIMIT $1`,
+       WHERE inbox.post_id GLOB '[0-9]*'
+         AND (stored.post_id IS NULL
+              OR stored.content_hash IS NOT json_extract(inbox.payload, '$.contentHash'))
+       ORDER BY CAST(inbox.post_id AS INTEGER) ASC LIMIT $1`,
       [limit],
     );
-    return result.rows.map((row) => row.payload);
+    return result.rows.map((row) => parseJsonColumn<unknown>(row.payload, null));
   }
 
   async saveExtraction(post: SourcePostObserved, result: SignalExtractionResult): Promise<void> {
-    await this.pool.query(
+    await this.db.query(
       `INSERT INTO signal_extractions (
          extraction_id, post_id, schema_version, prompt_version, provider, model,
          input_version, input_hash, source_content_hash, result_json, confidence, extracted_at
-       ) VALUES ($1, $2, '1.0', $3, $4, $5, $6, $7, $8, $9::jsonb, $10, now())
+       ) VALUES ($1, $2, '1.0', $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (post_id, prompt_version, model, input_hash) DO NOTHING`,
       [
         randomUUID(),
@@ -93,6 +96,7 @@ export class PostgresWorkerRepository {
         post.contentHash,
         JSON.stringify(result.extraction),
         result.extraction.confidence,
+        nowIso(),
       ],
     );
   }
@@ -100,16 +104,17 @@ export class PostgresWorkerRepository {
   async saveConfirmation(post: SourcePostObserved, decision: ConfirmationDecision): Promise<void> {
     if (!decision.event) return;
     const fingerprint = createHash("sha256").update(`post:${post.postId}`).digest("hex");
-    await this.pool.query(
+    const now = nowIso();
+    await this.db.query(
       `INSERT INTO reset_events (
          event_id, status, occurred_at, scope, evidence_post_ids, fingerprint, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, now(), now())
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
        ON CONFLICT (fingerprint) DO UPDATE SET
-         status = EXCLUDED.status,
-         occurred_at = EXCLUDED.occurred_at,
-         scope = EXCLUDED.scope,
-         evidence_post_ids = EXCLUDED.evidence_post_ids,
-         updated_at = now()`,
+         status = excluded.status,
+         occurred_at = excluded.occurred_at,
+         scope = excluded.scope,
+         evidence_post_ids = excluded.evidence_post_ids,
+         updated_at = excluded.updated_at`,
       [
         decision.event.eventId,
         decision.event.status,
@@ -117,90 +122,92 @@ export class PostgresWorkerRepository {
         decision.event.scope,
         JSON.stringify(decision.event.evidencePostIds),
         fingerprint,
+        now,
       ],
     );
   }
 
   async getForecastContext(): Promise<ForecastContext> {
+    const windowStart = new Date(Date.now() - FORECAST_SIGNAL_WINDOW_MS).toISOString();
     const [signalsResult, forecastResult, eventResult, statusResult] = await Promise.all([
-      this.pool.query<{
+      this.db.query<{
         post_id: string;
-        observed_at: Date;
-        result_json: unknown;
+        observed_at: string;
+        result_json: string;
       }>(
-        `SELECT DISTINCT ON (se.post_id) se.post_id, sp.observed_at, se.result_json
+        // One row per post: the newest extraction wins, which is what MAX(extracted_at) selects
+        // under SQLite's bare-column rule.
+        `SELECT se.post_id, sp.observed_at, se.result_json, MAX(se.extracted_at) AS extracted_at
          FROM signal_extractions se JOIN source_posts sp ON sp.post_id = se.post_id
-         WHERE sp.deleted_at IS NULL AND sp.observed_at >= now() - interval '168 hours'
-         ORDER BY se.post_id, se.extracted_at DESC`,
+         WHERE sp.deleted_at IS NULL AND sp.observed_at >= $1
+         GROUP BY se.post_id`,
+        [windowStart],
       ),
-      this.pool.query<{ summary_json: unknown }>(
+      this.db.query<{ summary_json: string }>(
         `SELECT summary_json FROM forecast_runs WHERE status = 'completed'
          ORDER BY generated_at DESC LIMIT 1`,
       ),
-      this.pool.query<{
+      this.db.query<{
         event_id: string;
         status: "candidate_confirmation" | "confirmed_reset" | "retracted";
-        occurred_at: Date | null;
+        occurred_at: string | null;
         scope: string;
-        evidence_post_ids: unknown;
+        evidence_post_ids: string;
       }>(
         `SELECT event_id, status, occurred_at, scope, evidence_post_ids FROM reset_events
          WHERE status = 'confirmed_reset' ORDER BY updated_at DESC LIMIT 1`,
       ),
-      this.pool.query<{
-        last_observed_at: Date | null;
-        last_public_activity_at: Date | null;
+      this.db.query<{
+        last_observed_at: string | null;
+        last_public_activity_at: string | null;
         consecutive_failures: number;
       }>(
         `SELECT
            (SELECT MAX(last_success_at) FROM collector_cursors) AS last_observed_at,
            (SELECT MAX(created_at) FROM source_posts WHERE deleted_at IS NULL) AS last_public_activity_at,
-           COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0)::int AS consecutive_failures`,
+           COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0) AS consecutive_failures`,
       ),
     ]);
     const event = eventResult.rows[0];
     const status = statusResult.rows[0];
+    const evidencePostIds = event ? parseJsonColumn<string[]>(event.evidence_post_ids, []) : [];
     return {
       signals: signalsResult.rows.map((row) => ({
         postId: row.post_id,
-        observedAt: row.observed_at.toISOString(),
-        extraction: SignalExtractionSchema.parse(row.result_json),
+        observedAt: row.observed_at,
+        extraction: SignalExtractionSchema.parse(parseJsonColumn(row.result_json, {})),
       })),
       previousSnapshot: forecastResult.rows[0]
-        ? ForecastSnapshotSchema.parse(forecastResult.rows[0].summary_json)
+        ? ForecastSnapshotSchema.parse(parseJsonColumn(forecastResult.rows[0].summary_json, {}))
         : null,
       confirmedSignal: event
         ? {
             eventId: event.event_id,
             status: event.status,
-            occurredAt: event.occurred_at?.toISOString() ?? null,
+            occurredAt: event.occurred_at,
             scope: event.scope,
-            evidencePostIds: Array.isArray(event.evidence_post_ids)
-              ? event.evidence_post_ids.filter(
-                  (value): value is string => typeof value === "string",
-                )
-              : [],
+            evidencePostIds: evidencePostIds.filter(
+              (value): value is string => typeof value === "string",
+            ),
           }
         : null,
-      lastObservedAt: status?.last_observed_at?.toISOString() ?? null,
-      lastPublicActivityAt: status?.last_public_activity_at?.toISOString() ?? null,
+      lastObservedAt: status?.last_observed_at ?? null,
+      lastPublicActivityAt: status?.last_public_activity_at ?? null,
       consecutiveFailures: status?.consecutive_failures ?? 0,
     };
   }
 
   async saveForecast(snapshot: ForecastSnapshot, inputHash: string): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(
+    await this.db.transaction(async () => {
+      await this.db.query(
         `INSERT INTO forecast_runs (
            run_id, model_version, generated_at, horizon_start, horizon_end,
            validation_status, freshness_status, confidence, input_hash, status, summary_json
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed',$10::jsonb)
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'completed',$10)
          ON CONFLICT (run_id) DO UPDATE SET
-           freshness_status = EXCLUDED.freshness_status,
-           confidence = EXCLUDED.confidence,
-           summary_json = EXCLUDED.summary_json`,
+           freshness_status = excluded.freshness_status,
+           confidence = excluded.confidence,
+           summary_json = excluded.summary_json`,
         [
           snapshot.runId,
           snapshot.model.version,
@@ -214,16 +221,10 @@ export class PostgresWorkerRepository {
           JSON.stringify(snapshot),
         ],
       );
-      await client.query("DELETE FROM forecast_buckets WHERE run_id = $1", [snapshot.runId]);
+      await this.db.query("DELETE FROM forecast_buckets WHERE run_id = $1", [snapshot.runId]);
       for (const bucket of snapshot.days.flatMap((day) => day.buckets))
-        await insertBucket(client, snapshot.runId, bucket);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+        await insertBucket(this.db, snapshot.runId, bucket);
+    });
   }
 }
 
@@ -232,7 +233,7 @@ interface SourcePostRow {
   author_id: string;
   source_kind: "post" | "reply" | "quote" | "repost";
   conversation_id: string | null;
-  referenced_post_ids: unknown;
+  referenced_post_ids: string;
   language: string | null;
   source_url: string;
   content_hash: string;
@@ -240,10 +241,10 @@ interface SourcePostRow {
   author_display_name: string | null;
   author_handle: string | null;
   author_avatar_url: string | null;
-  created_at: Date;
-  observed_at: Date;
-  edited_at: Date | null;
-  deleted_at: Date | null;
+  created_at: string;
+  observed_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
 }
 
 function mapPostRow(row: SourcePostRow): SourcePostObserved {
@@ -255,28 +256,28 @@ function mapPostRow(row: SourcePostRow): SourcePostObserved {
     authorAvatarUrl: row.author_avatar_url,
     sourceKind: row.source_kind,
     conversationId: row.conversation_id,
-    referencedPostIds: Array.isArray(row.referenced_post_ids) ? row.referenced_post_ids : [],
+    referencedPostIds: parseJsonColumn<string[]>(row.referenced_post_ids, []),
     language: row.language,
     sourceUrl: row.source_url,
     text: row.text_ephemeral ?? "",
     contentHash: row.content_hash,
-    createdAt: row.created_at.toISOString(),
-    observedAt: row.observed_at.toISOString(),
-    editedAt: row.edited_at?.toISOString() ?? null,
-    deletedAt: row.deleted_at?.toISOString() ?? null,
+    createdAt: row.created_at,
+    observedAt: row.observed_at,
+    editedAt: row.edited_at,
+    deletedAt: row.deleted_at,
   });
 }
 
 async function insertBucket(
-  client: PoolClient,
+  db: RadarDatabase,
   runId: string,
   bucket: ForecastSnapshot["days"][number]["buckets"][number],
 ) {
-  await client.query(
+  await db.query(
     `INSERT INTO forecast_buckets (
        run_id, bucket_index, start_at, end_at, hazard,
        interval_probability, cumulative_probability, reason_codes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       runId,
       bucket.index,

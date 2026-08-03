@@ -4,6 +4,7 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { TargetConfigSchema } from "@tibo-radar/contracts";
+import { RadarDatabase } from "@tibo-radar/db";
 import { OpenAICompatibleSignalAdapter } from "@tibo-radar/signal";
 import {
   DemoTimelineSource,
@@ -11,18 +12,26 @@ import {
   XFilteredStreamSource,
   XUserTimelineSource,
 } from "@tibo-radar/x-source";
-import pg from "pg";
 
 import { createDemoFixtures } from "./demo-fixtures.js";
 import { InboxTimelineSource } from "./inbox-source.js";
-import { PostgresWorkerRepository } from "./repository.js";
+import { SqliteWorkerRepository } from "./repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
 
-export async function startWorker() {
-  loadRepositoryEnv();
+export interface WorkerLoopOptions {
+  db: RadarDatabase;
+  onError?: (error: unknown) => void;
+}
+
+export interface WorkerLoopHandle {
+  stop(): Promise<void>;
+  finished: Promise<void>;
+}
+
+/** Builds the worker for a database that somebody else owns — the single-process entrypoint. */
+export async function createWorker(db: RadarDatabase): Promise<RadarWorker> {
   const config = TargetConfigSchema.parse(JSON.parse(await readFile(targetConfigPath(), "utf8")));
-  const pool = new pg.Pool({ connectionString: requiredEnv("DATABASE_URL") });
-  const repository = new PostgresWorkerRepository(pool);
+  const repository = new SqliteWorkerRepository(db);
   const timeline =
     config.mode === "demo"
       ? new DemoTimelineSource(createDemoFixtures(config))
@@ -38,7 +47,40 @@ export async function startWorker() {
           timeoutMs: positiveIntegerEnv("LLM_TIMEOUT_MS", 30_000),
         })
       : new DeterministicOnlySignalAdapter();
-  const worker = new RadarWorker({ source: timeline, repository, target: config, signalAdapter });
+  return new RadarWorker({ source: timeline, repository, target: config, signalAdapter });
+}
+
+/** Starts the collect/extract/forecast cycle in the background and returns a handle to stop it. */
+export function startWorkerLoop(options: WorkerLoopOptions): WorkerLoopHandle {
+  const controller = new AbortController();
+  const intervalMs = positiveIntegerEnv("POLL_INTERVAL_MS", 300_000);
+  const finished = (async () => {
+    const worker = await createWorker(options.db);
+    while (!controller.signal.aborted) {
+      try {
+        await worker.runOnce(controller.signal);
+      } catch (error) {
+        options.onError?.(error);
+      }
+      await abortableDelay(intervalMs, controller.signal);
+    }
+  })().catch((error) => options.onError?.(error));
+
+  return {
+    async stop() {
+      controller.abort();
+      await finished;
+    },
+    finished: finished.then(() => undefined),
+  };
+}
+
+/** Standalone entrypoint, kept for operators who want the collector in its own process. */
+export async function startWorker() {
+  loadRepositoryEnv();
+  const db = new RadarDatabase({ file: databasePath() });
+  const config = TargetConfigSchema.parse(JSON.parse(await readFile(targetConfigPath(), "utf8")));
+  const worker = await createWorker(db);
   const controller = new AbortController();
   for (const event of ["SIGINT", "SIGTERM"] as const) {
     process.once(event, () => controller.abort());
@@ -75,7 +117,7 @@ export async function startWorker() {
       }
     }
   } finally {
-    await pool.end();
+    await db.close();
   }
 }
 
@@ -85,6 +127,10 @@ function loadRepositoryEnv(): void {
   } catch (error) {
     if (!isMissingFile(error)) throw error;
   }
+}
+
+function databasePath(): string {
+  return process.env.RADAR_DB_PATH ?? path.resolve("data/radar.db");
 }
 
 function usesPushedInbox(): boolean {

@@ -5,11 +5,11 @@
   "type": "module",
   "packageManager": "pnpm@10.4.0",
   "engines": {
-    "node": ">=22.15.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "build:packages": "pnpm --filter @tibo-radar/contracts build && pnpm --filter @tibo-radar/signal build && pnpm --filter @tibo-radar/forecast build && pnpm --filter @tibo-radar/x-source build",
+    "build:packages": "pnpm --filter @tibo-radar/contracts build && pnpm --filter @tibo-radar/db build && pnpm --filter @tibo-radar/signal build && pnpm --filter @tibo-radar/forecast build && pnpm --filter @tibo-radar/x-source build && pnpm --filter @tibo-radar/worker build",
     "typecheck": "pnpm build:packages && pnpm typecheck:all",
     "typecheck:all": "pnpm -r --if-present typecheck",
     "test": "pnpm build:packages && pnpm test:all",
@@ -32,9 +32,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
     "@playwright/test": "^1.55.0",
-    "@types/node": "^22.10.7",
+    "@types/node": "^24.10.1",
     "@vitest/coverage-v8": "^3.2.6",
-    "pg": "^8.13.1",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.6"

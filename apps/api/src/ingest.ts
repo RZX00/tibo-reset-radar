@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { type SourcePostObserved, SourcePostObservedSchema } from "@tibo-radar/contracts";
-import type { Pool } from "pg";
+import { nowIso, type RadarDatabase } from "@tibo-radar/db";
 
 export const INGEST_BATCH_LIMIT = 200;
 
@@ -9,20 +9,27 @@ export interface RadarIngestStore {
   accept(posts: readonly SourcePostObserved[]): Promise<number>;
 }
 
-export class PostgresRadarIngestStore implements RadarIngestStore {
-  constructor(private readonly pool: Pool) {}
+export class SqliteRadarIngestStore implements RadarIngestStore {
+  constructor(private readonly db: RadarDatabase) {}
 
   async accept(posts: readonly SourcePostObserved[]): Promise<number> {
     if (posts.length === 0) return 0;
-    const result = await this.pool.query(
-      `INSERT INTO ingest_inbox (post_id, payload, received_at)
-       SELECT value->>'postId', value, now() FROM jsonb_array_elements($1::jsonb) AS value
-       ON CONFLICT (post_id) DO UPDATE
-         SET payload = EXCLUDED.payload, received_at = EXCLUDED.received_at
-         WHERE ingest_inbox.payload IS DISTINCT FROM EXCLUDED.payload`,
-      [JSON.stringify(posts)],
-    );
-    return result.rowCount ?? 0;
+    const receivedAt = nowIso();
+    return this.db.transaction(async () => {
+      let stored = 0;
+      for (const post of posts) {
+        const result = await this.db.query(
+          `INSERT INTO ingest_inbox (post_id, payload, received_at)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (post_id) DO UPDATE
+             SET payload = excluded.payload, received_at = excluded.received_at
+             WHERE ingest_inbox.payload IS NOT excluded.payload`,
+          [post.postId, JSON.stringify(post), receivedAt],
+        );
+        stored += result.rowCount;
+      }
+      return stored;
+    });
   }
 }
 

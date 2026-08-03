@@ -3,7 +3,7 @@
   "mode": "ghcr-docker-compose",
   "local": {
     "repo_root": "/mnt/e/app/tibo-reset-radar",
-    "build_command": "git tag -a v0.1.2 -m 'v0.1.2' && git push origin v0.1.2 && printf '0.1.2\\n' > deploy/.release-tag",
+    "build_command": "git tag -a v0.2.0 -m 'v0.2.0' && git push origin v0.2.0 && printf '0.2.0\\n' > deploy/.release-tag",
     "tag_file": "deploy/.release-tag",
     "deploy_bundle_paths": [
       "deploy"
@@ -30,16 +30,14 @@
   },
   "diagnostics": {
     "compose_services": [
-      "postgres",
-      "api",
-      "worker",
-      "web"
+      "radar"
     ],
     "log_commands": {
-      "api": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 api",
-      "worker": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 worker",
-      "web": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 web",
-      "postgres": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 postgres"
+      "radar": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml logs --tail=200 radar"
+    },
+    "state": {
+      "database": "SQLite at /data/radar.db inside the radar-data volume",
+      "backup": "docker compose --env-file deploy/.env.production -f deploy/compose.production.yml exec radar node -e \"require('node:sqlite');\" # stop the container and copy /data/radar.db for a cold copy"
     }
   }
 }
