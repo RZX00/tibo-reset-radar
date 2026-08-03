@@ -105,6 +105,12 @@ describe("deterministic signal rules", () => {
     ["A partial reset for the pilot cohort.", "limited"],
     ["We will reset tomorrow.", "future"],
     ["Someone said the reset is complete, just a rumour.", "ambiguous"],
+    // Announcements are written in the first person or the passive, never as "the reset is complete".
+    ["I've reset usage limits for all paid users.", "completed"],
+    ["I have reset everyone's usage limits.", "completed"],
+    ["The usage limits have been reset for all paid users.", "completed"],
+    ["Usage limits will be fully reset again in the next hour.", "future"],
+    ["I have not reset anything yet.", "ambiguous"],
   ] as const)("classifies %s", (text, expected) => {
     expect(extractSignalWithRules(text, REFERENCE_TIME).explicitResetState).toBe(expected);
   });
@@ -161,6 +167,34 @@ describe("confirmation engine", () => {
 
     expect(decision.state).toBe("candidate_confirmation");
     expect(decision.event?.occurredAt).toBeNull();
+  });
+
+  it.each([
+    "I've reset usage limits for all paid users.",
+    "The usage limits have been reset for all paid users.",
+  ])("confirms the way an announcement is actually written: %s", (text) => {
+    const post = makePost(text);
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision.state).toBe("confirmed_reset");
+    expect(decision.event?.occurredAt).toBe(post.createdAt);
+  });
+
+  it("keeps an emphatic promise out of confirmation", () => {
+    const post = makePost("Usage limits will be fully reset again in the next hour.");
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision.state).not.toBe("confirmed_reset");
   });
 
   it("honors the banked Reset forecast-only policy", () => {
