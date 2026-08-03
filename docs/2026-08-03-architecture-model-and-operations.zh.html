@@ -109,7 +109,7 @@
       <header id="summary">
         <span class="kicker">2026-08-03 · RZX00/tibo-reset-radar</span>
         <h1>架构、模型与运行手册</h1>
-        <p class="lede">本文是首发实现的当前事实：独立开源仓库、可插拔的 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页天气雷达以及容器化部署边界。公共实例已于 2026-08-03 切到真实数据：目标是 <code>@thsottiaux</code>（<code>1953337039510003712</code>），采集由本地机器完成后推送，服务器自身不持有任何 X 凭据。</p>
+        <p class="lede">本文是首发实现的当前事实：独立开源仓库、可插拔的 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页雷达以及容器化部署边界。公共实例已于 2026-08-03 切到真实数据：目标是 <code>@thsottiaux</code>（<code>1953337039510003712</code>），采集由本地机器完成后推送，服务器自身不持有任何 X 凭据。</p>
         <div class="tags">
           <span class="tag">Apache-2.0</span><span class="tag">Node.js 24</span><span class="tag">SQLite</span><span class="tag">单容器</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
         </div>
@@ -155,7 +155,7 @@
       <section id="modules">
         <div class="section-head"><div><span class="kicker">Ownership</span><h2>模块职责</h2></div><div class="number">03</div></div>
         <table><thead><tr><th>路径</th><th>职责</th><th>关键约束</th></tr></thead><tbody>
-          <tr><td class="path">apps/web</td><td>单页雷达、响应式天气带、分享与 Umami 适配</td><td>不自行计算概率；Demo 必须可见</td></tr>
+          <tr><td class="path">apps/web</td><td>单页雷达、响应式 7 日信号带、分享与 Umami 适配</td><td>不自行计算概率；Demo 必须可见</td></tr>
           <tr><td class="path">apps/api</td><td>5 个只读端点、ETag、动态 OG PNG</td><td>统一错误体；PNG 按 runId 缓存</td></tr>
           <tr><td class="path">apps/worker</td><td>轮询/Stream 编排、提取、确认、预测落库</td><td>支持单次运行；日志不输出凭据</td></tr>
           <tr><td class="path">packages/x-source</td><td>官方 X adapter、去重、游标、重连与 tombstone</td><td>排除 repost；删除时清空原文</td></tr>
@@ -195,7 +195,7 @@ age > 3h / none        -> quiet</pre></div>
         <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 模型卡与回测</h2></div><div class="number">06</div></div>
         <div class="grid-2">
           <div class="box"><h3>适用范围</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>不是个体账户到账时间承诺，不替代权威确认。</li></ul></div>
-          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时天气形态仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
+          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时信号档位仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
         </div>
         <pre>DATABASE_URL=... pnpm model:backtest
 

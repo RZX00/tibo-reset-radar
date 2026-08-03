@@ -364,14 +364,10 @@ h2 {
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.weather-label {
+.signal-label {
   margin-top: 5px;
   font-size: 0.86rem;
   font-weight: 720;
-}
-.weather-note {
-  color: var(--muted);
-  font-size: 0.72rem;
 }
 .cumulative {
   align-self: end;

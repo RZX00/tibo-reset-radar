@@ -86,7 +86,7 @@ export function generateForecast(input: ForecastGenerationInput): ForecastSnapsh
       endAt: last.endAt,
       intervalProbability,
       cumulativeProbability: last.cumulativeProbability,
-      weatherCode: weatherCodeFor(intervalProbability),
+      signalLevel: signalLevelFor(intervalProbability),
       buckets: dayBuckets,
     };
   });
@@ -241,14 +241,14 @@ function reasonsForBucket(
   ).slice(0, 4);
 }
 
-function weatherCodeFor(
+function signalLevelFor(
   probability: number,
-): "clear" | "partly_cloudy" | "cloudy" | "storm_watch" | "storm_warning" {
-  if (probability < 0.06) return "clear";
-  if (probability < 0.12) return "partly_cloudy";
-  if (probability < 0.2) return "cloudy";
-  if (probability < 0.35) return "storm_watch";
-  return "storm_warning";
+): "calm" | "slight" | "gathering" | "elevated" | "strong" {
+  if (probability < 0.06) return "calm";
+  if (probability < 0.12) return "slight";
+  if (probability < 0.2) return "gathering";
+  if (probability < 0.35) return "elevated";
+  return "strong";
 }
 
 function validateTimestamp(value: string, label: string): void {
