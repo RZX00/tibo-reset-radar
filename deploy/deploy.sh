@@ -9,17 +9,25 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-if grep -Eq 'RADAR_(NODE|WEB)_IMAGE=.*:(latest|main)$' "$ENV_FILE"; then
+if grep -Eq 'RADAR_IMAGE=.*:(latest|main)$' "$ENV_FILE"; then
   echo "production images must use immutable release tags" >&2
   exit 1
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config >/dev/null
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm migrate
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-deps api worker web
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 
 RADAR_PORT=$(sed -n 's/^RADAR_PORT=//p' "$ENV_FILE" | tail -1)
 RADAR_PORT=${RADAR_PORT:-4173}
-curl --fail --silent --show-error "http://127.0.0.1:${RADAR_PORT}/api/status" >/dev/null
+# The container migrates on boot, so give it a moment before calling the deployment healthy.
+attempt=0
+until curl --fail --silent --show-error "http://127.0.0.1:${RADAR_PORT}/api/status" >/dev/null; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    echo "radar did not become healthy on 127.0.0.1:${RADAR_PORT}" >&2
+    exit 1
+  fi
+  sleep 2
+done
 echo "deployment healthy on 127.0.0.1:${RADAR_PORT}"

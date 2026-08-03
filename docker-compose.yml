@@ -1,69 +1,17 @@
 name: tibo-reset-radar
 
 services:
-  postgres:
-    image: postgres:17-alpine
+  radar:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    env_file: .env
     environment:
-      POSTGRES_DB: radar
-      POSTGRES_USER: radar
-      POSTGRES_PASSWORD: radar
-    ports:
-      - "127.0.0.1:55432:5432"
+      RADAR_DB_PATH: /data/radar.db
     volumes:
-      - radar-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U radar -d radar"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  migrate:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.node
-    command: ["pnpm", "db:migrate"]
-    environment:
-      DATABASE_URL: postgres://radar:radar@postgres:5432/radar
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  api:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.node
-    command: ["pnpm", "--filter", "@tibo-radar/api", "start"]
-    env_file: .env
-    environment:
-      DATABASE_URL: postgres://radar:radar@postgres:5432/radar
-      PORT: 8787
-    expose:
-      - "8787"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  worker:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.node
-    command: ["pnpm", "--filter", "@tibo-radar/worker", "start"]
-    env_file: .env
-    environment:
-      DATABASE_URL: postgres://radar:radar@postgres:5432/radar
-      TARGET_CONFIG_PATH: /app/config/target.json
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  web:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.web
+      - radar-data:/data
     ports:
-      - "127.0.0.1:4173:80"
-    depends_on:
-      - api
+      - "127.0.0.1:4173:8787"
 
 volumes:
-  radar-postgres:
+  radar-data:

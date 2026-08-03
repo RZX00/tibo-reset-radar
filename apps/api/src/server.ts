@@ -3,12 +3,36 @@ import { createHash } from "node:crypto";
 import type { ForecastSnapshot } from "@tibo-radar/contracts";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 
+import { isAuthorizedIngest, parseIngestBody, type RadarIngestStore } from "./ingest.js";
 import { renderShareCard } from "./share-card.js";
 import type { RadarReadStore } from "./store.js";
 
 export interface BuildServerOptions {
   store: RadarReadStore;
+  /** Absent unless the deployment runs its collector elsewhere and pushes posts in. */
+  ingest?: { store: RadarIngestStore; token: string };
   logger?: boolean;
+  now?: () => Date;
+}
+
+/**
+ * A confirmation describes something that happened, not a state the world stays in. Past this
+ * window the page goes back to forecasting the next one — the event itself stays in the payload as
+ * evidence and history.
+ */
+export const CONFIRMED_RESET_DISPLAY_WINDOW_HOURS = 24;
+
+export function currentResetState(
+  event: { status: string; occurredAt: string | null } | null,
+  now: Date,
+): string {
+  if (!event) return "forecasting";
+  if (event.status !== "confirmed_reset") return event.status;
+  if (!event.occurredAt) return "forecasting";
+  const ageMs = now.getTime() - new Date(event.occurredAt).getTime();
+  return ageMs <= CONFIRMED_RESET_DISPLAY_WINDOW_HOURS * 60 * 60 * 1_000
+    ? "confirmed_reset"
+    : "forecasting";
 }
 
 export function buildServer(options: BuildServerOptions) {
@@ -59,9 +83,29 @@ export function buildServer(options: BuildServerOptions) {
     return sendEtagged(request, reply, { window, items: await options.store.getEvents(hours) });
   });
 
+  if (options.ingest) {
+    const ingest = options.ingest;
+    app.post("/api/ingest/posts", async (request, reply) => {
+      if (!isAuthorizedIngest(request.headers.authorization, ingest.token)) {
+        return reply
+          .code(401)
+          .send({ error: { code: "UNAUTHORIZED", message: "A valid ingest token is required" } });
+      }
+      const parsed = parseIngestBody(request.body);
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: { code: parsed.code, message: parsed.message } });
+      }
+      const stored = await ingest.store.accept(parsed.posts);
+      return reply.code(202).send({ received: parsed.posts.length, stored });
+    });
+  }
+
   app.get("/api/reset-status", async (request, reply) => {
     const event = await options.store.getLatestResetEvent();
-    return sendEtagged(request, reply, { state: event?.status ?? "forecasting", event });
+    return sendEtagged(request, reply, {
+      state: currentResetState(event, options.now?.() ?? new Date()),
+      event,
+    });
   });
 
   app.get("/api/share-card.png", async (request, reply) => {

@@ -109,9 +109,9 @@
       <header id="summary">
         <span class="kicker">2026-08-03 · RZX00/tibo-reset-radar</span>
         <h1>架构、模型与运行手册</h1>
-        <p class="lede">本文是首发实现的当前事实：独立开源仓库、官方 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页天气雷达以及容器化部署边界。真实 Tibo 身份和运行凭据未配置前，系统必须保持 Demo 模式。</p>
+        <p class="lede">本文是首发实现的当前事实：独立开源仓库、可插拔的 X 数据入口、可复现启发式预测、独立确认引擎、只读 API、单页雷达以及容器化部署边界。公共实例已于 2026-08-03 切到真实数据：目标是 <code>@thsottiaux</code>（<code>1953337039510003712</code>），采集由本地机器完成后推送，服务器自身不持有任何 X 凭据。</p>
         <div class="tags">
-          <span class="tag">Apache-2.0</span><span class="tag">Node.js 22</span><span class="tag">PostgreSQL 17</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
+          <span class="tag">Apache-2.0</span><span class="tag">Node.js 24</span><span class="tag">SQLite</span><span class="tag">单容器</span><span class="tag">28 × 6h</span><span class="tag">max 0.99</span>
         </div>
         <div class="cards">
           <article class="card"><span>边界</span><h3>与 ewo 完全隔离</h3><p>不引用 ewo 包、数据库、会话、部署网络或密钥。品牌署名不形成运行依赖。</p></article>
@@ -125,13 +125,13 @@
         <div class="section-head"><div><span class="kicker">Boundary</span><h2>仓库与运行边界</h2><p class="note">所有资产在 <code>E:\app\tibo-reset-radar</code> 内独立演进。</p></div><div class="number">01</div></div>
         <pre>Tibo Reset Radar
 |- source ------------------------- github.com/RZX00/tibo-reset-radar
-|- database ----------------------- dedicated PostgreSQL 17 + volume
+|- database ----------------------- SQLite file on a dedicated volume
 |- network ------------------------ dedicated Compose network
 |- secrets ------------------------ ignored .env / host secret store
-|- public host -------------------- radar.ewo.so (pending host + DNS)
+|- public host -------------------- tibo-reset.ewo.so (live, dedicated host)
 |- ewo dependency ----------------- none
 \- prohibited runtime coupling ---- ewo DB / API / cookies / packages / keys</pre>
-        <div class="callout"><strong>当前发布门禁：</strong> <code>config/target.json</code> 仍是 Demo 身份。切换 live 前必须补齐准确 User ID、handle、Reset 定义、权威账号白名单和 banked reset 规则。</div>
+        <div class="callout"><strong>身份与门禁：</strong>公开仓库里的 <code>config/target.json</code> 永远是 Demo，CI 强制。真实身份冻结在 <code>config/target.live.example.json</code>：目标 <code>@thsottiaux</code>，确认权威额外包含 <code>@OpenAI</code>、<code>@OpenAIDevs</code>、<code>@embirico</code>，<code>banked_reset</code> 取 <code>forecast_only</code>。部署通过 <code>RADAR_TARGET_CONFIG_FILE</code> 挂载自己的目标文件，切换模式不需要重建镜像。</div>
       </section>
 
       <section id="flow">
@@ -144,7 +144,7 @@
             <rect class="node" x="420" y="90" width="150" height="78"/><text class="svg-title" x="495" y="121" text-anchor="middle">Signal</text><text class="svg-note" x="495" y="143" text-anchor="middle">LLM + rules</text>
             <rect class="node green" x="615" y="30" width="160" height="78"/><text class="svg-title" x="695" y="61" text-anchor="middle">Forecast</text><text class="svg-note" x="695" y="83" text-anchor="middle">28 rolling buckets</text>
             <rect class="node amber" x="615" y="150" width="160" height="78"/><text class="svg-title" x="695" y="181" text-anchor="middle">Confirmation</text><text class="svg-note" x="695" y="203" text-anchor="middle">authority + occurred</text>
-            <rect class="node" x="820" y="90" width="130" height="78"/><text class="svg-title" x="885" y="121" text-anchor="middle">PostgreSQL</text><text class="svg-note" x="885" y="143" text-anchor="middle">audit truth</text>
+            <rect class="node" x="820" y="90" width="130" height="78"/><text class="svg-title" x="885" y="121" text-anchor="middle">SQLite</text><text class="svg-note" x="885" y="143" text-anchor="middle">audit truth</text>
             <rect class="node blue" x="990" y="90" width="105" height="78"/><text class="svg-title" x="1042" y="121" text-anchor="middle">API / UI</text><text class="svg-note" x="1042" y="143" text-anchor="middle">read only</text>
             <path class="line" d="M180 129 H225"/><path class="line" d="M375 129 H420"/><path class="line" d="M570 112 L615 74"/><path class="line" d="M570 146 L615 181"/><path class="line" d="M775 69 L820 111"/><path class="line" d="M775 189 L820 147"/><path class="line" d="M950 129 H990"/>
             <text class="svg-note" x="300" y="260" text-anchor="middle">断线立即对账；正常每 120 秒对账（非实时保证）</text><text class="svg-note" x="695" y="280" text-anchor="middle">stale 冻结预测，不篡改事件概率</text>
@@ -155,7 +155,7 @@
       <section id="modules">
         <div class="section-head"><div><span class="kicker">Ownership</span><h2>模块职责</h2></div><div class="number">03</div></div>
         <table><thead><tr><th>路径</th><th>职责</th><th>关键约束</th></tr></thead><tbody>
-          <tr><td class="path">apps/web</td><td>单页雷达、响应式天气带、分享与 Umami 适配</td><td>不自行计算概率；Demo 必须可见</td></tr>
+          <tr><td class="path">apps/web</td><td>单页雷达、响应式 7 日信号带、分享与 Umami 适配</td><td>不自行计算概率；Demo 必须可见</td></tr>
           <tr><td class="path">apps/api</td><td>5 个只读端点、ETag、动态 OG PNG</td><td>统一错误体；PNG 按 runId 缓存</td></tr>
           <tr><td class="path">apps/worker</td><td>轮询/Stream 编排、提取、确认、预测落库</td><td>支持单次运行；日志不输出凭据</td></tr>
           <tr><td class="path">packages/x-source</td><td>官方 X adapter、去重、游标、重连与 tombstone</td><td>Filtered Stream 规则需外部预置；删除同步尚未完成</td></tr>
@@ -195,7 +195,7 @@ age > 3h / none        -> quiet</pre></div>
         <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 模型卡与回测</h2></div><div class="number">06</div></div>
         <div class="grid-2">
           <div class="box"><h3>适用范围</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>不是个体账户到账时间承诺，不替代权威确认。</li></ul></div>
-          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时天气形态仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
+          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时信号档位仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
         </div>
         <pre>DATABASE_URL=... pnpm model:backtest
 
@@ -229,18 +229,19 @@ sh deploy/deploy.sh deploy/.env.production
 
 # 回滚应用镜像；数据库迁移保持向前兼容
 sh deploy/rollback.sh deploy/.env.production.previous</pre>
-        <div class="callout"><strong>当前仅支持本地/Demo 验证：</strong>Filtered Stream 依赖外部预置规则，本仓库不管理规则；轮询/断线对账不构成实时或 SLO 保证，删除同步尚未完成。radar.ewo.so 当前未发布，真实目标与运行凭据也未配置。</div>
+        <div class="callout"><strong>tibo-reset.ewo.so 已发布并已切真实数据（2026-08-03）：</strong>v0.1.2 镜像运行在独立主机上，Cloudflare 代理 A 记录 + Let's Encrypt origin 证书 + OpenResty 反向代理到 <code>127.0.0.1:4173</code>，四条冒烟 URL 全部 200。采集走 <code>RADAR_COLLECTOR_MODE=inbox</code>：本地机器每 5 分钟读一次公开时间线并推送到 <code>POST /api/ingest/posts</code>，服务器只持有 ingest token，不持有 X 会话。信号提取当前走确定性规则回退，配上 <code>LLM_*</code> 后自动升级。</div>
       </section>
 
       <section id="verification">
         <div class="section-head"><div><span class="kicker">Evidence</span><h2>首发验证证据</h2></div><div class="number">09</div></div>
         <table><thead><tr><th>检查</th><th>当前结果</th><th>证据</th></tr></thead><tbody>
           <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、Forecast、Collector、API、Web；250 组预测属性输入</td></tr>
-          <tr><td>PostgreSQL E2E</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG</td></tr>
-          <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>PostgreSQL 17、migrate、api、worker、web</td></tr>
+          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG；含乱序回填</td></tr>
+          <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>单镜像：迁移 + API + 静态页 + 采集循环同进程</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
-          <tr><td>真实 X 闭环</td><td><span class="status blocked">WAITING INPUT</span></td><td>真实 User ID、handle、定义、白名单、X/LLM 凭据</td></tr>
-          <tr><td>radar.ewo.so</td><td><span class="status blocked">WAITING INFRA</span></td><td>独立主机、DNS、TLS 与发布授权尚未提供</td></tr>
+          <tr><td>真实 X 闭环</td><td><span class="status ok">PASS</span></td><td>本地采集 → <code>POST /api/ingest/posts</code> → 入库去重 → 提取 → 新预测 → 页面；首批 20 条真实公开帖</td></tr>
+          <tr><td>LLM 信号提取</td><td><span class="status blocked">WAITING INPUT</span></td><td>未配置 <code>LLM_*</code>，当前走确定性规则回退</td></tr>
+          <tr><td>tibo-reset.ewo.so</td><td><span class="status ok">LIVE</span></td><td>v0.1.2；<code>/</code>、<code>/api/status</code>、<code>/api/forecast</code>、<code>/api/share-card.png</code> 公网 200</td></tr>
         </tbody></table>
       </section>
 

@@ -13,6 +13,10 @@ const RETRACTED_PATTERNS = [
 ];
 const COMPLETED_PATTERNS = [
   /\b(?:reset\s+(?:is\s+)?(?:complete|completed|done|live)|has\s+(?:now\s+)?reset|successfully\s+reset)\b/i,
+  // How an operator actually announces it: first person past tense, or passive past tense.
+  // Without these, "I've reset usage limits" and "limits have been reset" read as no claim at all.
+  /\b(?:i|we)(?:'ve|’ve|\s+have|\s+just)\s+(?:just\s+|now\s+)?reset\b/i,
+  /\b(?:have|has|had)\s+(?:now\s+)?been\s+reset\b/i,
   /(?:重置已完成|已经重置|已完成重置|现已重置|重置成功)/,
 ];
 const ROLLING_PATTERNS = [
@@ -21,6 +25,8 @@ const ROLLING_PATTERNS = [
 ];
 const FUTURE_PATTERNS = [
   /\b(?:will|going\s+to|plan(?:ning)?\s+to|scheduled\s+to)\s+(?:perform\s+(?:a\s+)?)?reset\b/i,
+  // "will be fully reset again in the next hour" — a promise, however emphatic, stays a promise.
+  /\bwill\s+(?:\w+\s+){0,3}reset\b/i,
   /\breset\s+(?:is\s+)?(?:coming|scheduled|planned)\b/i,
   /(?:将会?|计划|预计|准备|安排)(?:进行)?重置|重置(?:即将|计划于|预计于)/,
 ];

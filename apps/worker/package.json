@@ -12,12 +12,15 @@
   },
   "dependencies": {
     "@tibo-radar/contracts": "workspace:*",
+    "@tibo-radar/db": "workspace:*",
     "@tibo-radar/forecast": "workspace:*",
     "@tibo-radar/signal": "workspace:*",
-    "@tibo-radar/x-source": "workspace:*",
-    "pg": "^8.13.1"
+    "@tibo-radar/x-source": "workspace:*"
   },
-  "devDependencies": {
-    "@types/pg": "^8.11.11"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   }
 }

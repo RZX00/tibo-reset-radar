@@ -16,9 +16,6 @@
   },
   "dependencies": {
     "@tibo-radar/contracts": "workspace:*",
-    "pg": "^8.13.1"
-  },
-  "devDependencies": {
-    "@types/pg": "^8.11.11"
+    "@tibo-radar/db": "workspace:*"
   }
 }

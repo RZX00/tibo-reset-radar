@@ -22,6 +22,10 @@ export interface ConfirmationDecision {
 const CONFIRMED_PATTERNS = [
   /\b(?:reset\s+(?:is\s+)?(?:complete|completed|done|live)|has\s+(?:now\s+)?reset|successfully\s+reset)\b/i,
   /\b(?:reset\s+is\s+(?:rolling\s+out|underway|in\s+progress)|reset\s+starts?\s+now|starting\s+the\s+reset)\b/i,
+  // The deterministic evidence gate has to recognise the same past-tense phrasings the extractor
+  // classifies as completed, or every real announcement stalls at candidate forever.
+  /\b(?:i|we)(?:'ve|’ve|\s+have|\s+just)\s+(?:just\s+|now\s+)?reset\b/i,
+  /\b(?:have|has|had)\s+(?:now\s+)?been\s+reset\b/i,
   /(?:重置已完成|已经重置|已完成重置|现已重置|重置成功|正在重置|开始重置|重置进行中)/,
 ];
 const RETRACTED_PATTERNS = [

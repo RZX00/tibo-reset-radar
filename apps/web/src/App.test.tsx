@@ -28,7 +28,7 @@ const forecast = {
     endAt: new Date(Date.UTC(2026, 7, 4 + day, 8)).toISOString(),
     intervalProbability: 0.1,
     cumulativeProbability: Math.min(0.7, 0.1 * (day + 1)),
-    weatherCode: day === 2 ? "storm_watch" : "partly_cloudy",
+    signalLevel: day === 2 ? "elevated" : "slight",
     buckets: Array.from({ length: 4 }, (_, bucket) => ({
       index: day * 4 + bucket,
       startAt: new Date(Date.UTC(2026, 7, 3 + day, 8 + bucket * 6)).toISOString(),

@@ -174,7 +174,7 @@ function makeForecast(): ForecastSnapshot {
       endAt: buckets[index * 4 + 3]?.endAt ?? "",
       intervalProbability: 0.04,
       cumulativeProbability: (index + 1) * 0.04,
-      weatherCode: "clear" as const,
+      signalLevel: "calm" as const,
       buckets: buckets.slice(index * 4, index * 4 + 4),
     })),
     confirmedSignal: null,

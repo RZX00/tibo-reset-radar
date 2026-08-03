@@ -1,33 +1,29 @@
 import path from "node:path";
 import { loadEnvFile } from "node:process";
-
-import pg from "pg";
-
 import { ForecastSnapshotSchema } from "../packages/contracts/dist/index.js";
+import { RadarDatabase } from "../packages/db/dist/index.js";
 import { evaluateBacktest } from "../packages/forecast/dist/index.js";
 
 loadLocalEnv();
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
 const windowSize = positiveInteger(process.env.BACKTEST_WINDOW ?? "200");
-const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
+const db = new RadarDatabase({ file: process.env.RADAR_DB_PATH ?? path.resolve("data/radar.db") });
 
 try {
-  const runs = await pool.query<{ summary_json: unknown; horizon_start: Date; horizon_end: Date }>(
+  const runs = await db.query<{ summary_json: string; horizon_start: string; horizon_end: string }>(
     `SELECT summary_json, horizon_start, horizon_end
      FROM forecast_runs
-     WHERE status = 'completed' AND horizon_end <= now()
+     WHERE status = 'completed' AND horizon_end <= $2
      ORDER BY generated_at DESC
      LIMIT $1`,
-    [windowSize],
+    [windowSize, new Date().toISOString()],
   );
-  const confirmed = await pool.query<{ occurred_at: Date }>(
+  const confirmed = await db.query<{ occurred_at: string }>(
     `SELECT occurred_at FROM reset_events
      WHERE status = 'confirmed_reset' AND occurred_at IS NOT NULL
      ORDER BY occurred_at`,
   );
   const cases = runs.rows.map((row) => {
-    const snapshot = ForecastSnapshotSchema.parse(row.summary_json);
+    const snapshot = ForecastSnapshotSchema.parse(JSON.parse(row.summary_json));
     const outcome = confirmed.rows.some(
       (event) => event.occurred_at >= row.horizon_start && event.occurred_at < row.horizon_end,
     )
@@ -49,7 +45,7 @@ try {
     ),
   );
 } finally {
-  await pool.end();
+  await db.close();
 }
 
 function positiveInteger(value: string): number {
