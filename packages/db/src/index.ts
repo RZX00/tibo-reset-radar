@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 export interface QueryResult<Row> {
@@ -21,6 +23,10 @@ export class RadarDatabase {
   readonly #statements = new Map<string, StatementSync>();
 
   constructor(options: RadarDatabaseOptions) {
+    // SQLite will create the file but not the directory holding it, and "unable to open database
+    // file" is a poor way to learn that.
+    if (options.file !== ":memory:")
+      mkdirSync(path.dirname(path.resolve(options.file)), { recursive: true });
     this.#db = new DatabaseSync(options.file);
     // WAL keeps the worker's writes from blocking API reads inside the same process.
     this.#db.exec("PRAGMA journal_mode = WAL");
