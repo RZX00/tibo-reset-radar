@@ -17,15 +17,15 @@
     "bundle_root": "/app/tibo-reset-radar",
     "compose_file": "deploy/compose.production.yml",
     "env_file": "deploy/.env.production",
-    "edge_config": "/opt/1panel/apps/openresty/openresty/conf/conf.d/radar.ewo.so.conf"
+    "edge_config": "/opt/1panel/apps/openresty/openresty/conf/conf.d/tibo-reset.ewo.so.conf"
   },
   "release": {
     "deploy_command": "sh deploy/deploy.sh deploy/.env.production",
     "smoke": [
-      "https://radar.ewo.so/",
-      "https://radar.ewo.so/api/status",
-      "https://radar.ewo.so/api/forecast?timezone=Asia%2FShanghai",
-      "https://radar.ewo.so/api/share-card.png"
+      "https://tibo-reset.ewo.so/",
+      "https://tibo-reset.ewo.so/api/status",
+      "https://tibo-reset.ewo.so/api/forecast?timezone=Asia%2FShanghai",
+      "https://tibo-reset.ewo.so/api/share-card.png"
     ]
   },
   "diagnostics": {
