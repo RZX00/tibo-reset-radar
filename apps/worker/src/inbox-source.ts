@@ -18,6 +18,10 @@ export interface InboxTimelineSourceOptions {
  * Drains posts pushed in by an operator-run collector. The collector may live on a different
  * machine — typically a residential one — so this source owns no credentials and no network calls;
  * it only turns rows into the same observed-post contract every other source produces.
+ *
+ * The reader decides which rows are still outstanding. A collector is free to push history long
+ * after newer posts, so "outstanding" cannot mean "newer than the cursor"; the returned cursor is
+ * only a high-water mark for reporting.
  */
 export class InboxTimelineSource implements TimelineSource {
   readonly #reader: InboxReader;
