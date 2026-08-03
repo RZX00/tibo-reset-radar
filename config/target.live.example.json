@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "live",
+  "target": {
+    "userId": "1953337039510003712",
+    "handle": "thsottiaux",
+    "displayName": "Tibo"
+  },
+  "authoritativeUserIds": [
+    "1953337039510003712",
+    "4398626122",
+    "1633874951508721686",
+    "413490474"
+  ],
+  "resetDefinition": "A publicly announced reset of OpenAI Codex and ChatGPT Work usage limits for paid users. Only a post from an authoritative account stating that the reset has happened or has started rolling out counts as confirmed; a promise about a future reset stays a forecast signal.",
+  "bankedResetPolicy": "forecast_only"
+}
