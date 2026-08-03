@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -18,7 +19,16 @@ const secretPatterns = [
 
 async function filesUnder(root: string): Promise<string[]> {
   const result: string[] = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return result;
+    }
+    throw error;
+  }
+  for (const entry of entries) {
     if (["node_modules", "dist", "coverage", "output", ".cache"].includes(entry.name)) {
       continue;
     }
