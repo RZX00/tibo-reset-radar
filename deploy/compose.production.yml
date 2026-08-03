@@ -34,6 +34,8 @@ services:
     environment:
       DATABASE_URL: postgres://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
       DEMO_MODE: ${DEMO_MODE:-true}
+      # Empty means the ingest route is not registered at all.
+      RADAR_INGEST_TOKEN: ${RADAR_INGEST_TOKEN:-}
       HOST: 0.0.0.0
       PORT: 8787
     expose: ["8787"]

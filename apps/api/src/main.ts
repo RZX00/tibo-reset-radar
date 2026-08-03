@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pg from "pg";
 
+import { PostgresRadarIngestStore } from "./ingest.js";
 import { buildServer } from "./server.js";
 import { PostgresRadarReadStore } from "./store.js";
 
@@ -10,12 +11,17 @@ export async function startApi() {
   loadRepositoryEnv();
   const databaseUrl = requiredEnv("DATABASE_URL");
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  const ingestToken = process.env.RADAR_INGEST_TOKEN ?? "";
   const app = buildServer({
     store: new PostgresRadarReadStore({
       pool,
       serviceVersion: process.env.npm_package_version ?? "0.1.0",
       demoMode: process.env.DEMO_MODE !== "false",
     }),
+    // No token configured means no write surface exists at all, not an unguarded one.
+    ...(ingestToken
+      ? { ingest: { store: new PostgresRadarIngestStore(pool), token: ingestToken } }
+      : {}),
     logger: true,
   });
   app.addHook("onClose", async () => pool.end());
