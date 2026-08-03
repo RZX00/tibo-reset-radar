@@ -72,12 +72,17 @@ export class SqliteRadarReadStore implements RadarReadStore {
   }
 
   async getLatestForecast(): Promise<ForecastSnapshot | null> {
+    // A snapshot written under an older contract must read as "no forecast yet", which the API
+    // already has an answer for, rather than taking the whole page down with a 500.
     const result = await this.#db.query<{ summary_json: string }>(
       `SELECT summary_json FROM forecast_runs
-       WHERE status = 'completed' ORDER BY generated_at DESC LIMIT 1`,
+       WHERE status = 'completed' ORDER BY generated_at DESC LIMIT 5`,
     );
-    const row = result.rows[0];
-    return row ? ForecastSnapshotSchema.parse(parseJsonColumn(row.summary_json, {})) : null;
+    for (const row of result.rows) {
+      const parsed = ForecastSnapshotSchema.safeParse(parseJsonColumn(row.summary_json, {}));
+      if (parsed.success) return parsed.data;
+    }
+    return null;
   }
 
   async getEvents(hours: number): Promise<SourcePostObserved[]> {
