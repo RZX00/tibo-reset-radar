@@ -23,9 +23,9 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const command = process.env.X_COLLECT_COMMAND ?? "twitter";
-const argsTemplate = (
-  process.env.X_COLLECT_ARGS ?? "user-posts,{handle},-n,{limit},--json"
-).split(",");
+const argsTemplate = (process.env.X_COLLECT_ARGS ?? "user-posts,{handle},-n,{limit},--json").split(
+  ",",
+);
 const handle = required("X_TARGET_HANDLE").replace(/^@/, "");
 const targetUserId = required("X_TARGET_USER_ID");
 const limit = String(Number(process.env.X_COLLECT_LIMIT ?? 20));

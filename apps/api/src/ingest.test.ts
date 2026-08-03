@@ -28,7 +28,11 @@ describe("ingest surface", () => {
     const store = new MemoryIngestStore();
     const app = buildServer({ store: emptyReadStore(), ingest: { store, token: "correct-token" } });
     servers.push(app);
-    for (const headers of [undefined, { authorization: "Bearer wrong-token1" }, { authorization: "Bearer correct" }]) {
+    for (const headers of [
+      undefined,
+      { authorization: "Bearer wrong-token1" },
+      { authorization: "Bearer correct" },
+    ]) {
       const response = await app.inject({
         method: "POST",
         url: "/api/ingest/posts",
@@ -79,7 +83,9 @@ describe("ingest surface", () => {
       url: "/api/ingest/posts",
       headers: { authorization: "Bearer t" },
       payload: {
-        posts: Array.from({ length: INGEST_BATCH_LIMIT + 1 }, (_, index) => makePost(`${index + 1}`)),
+        posts: Array.from({ length: INGEST_BATCH_LIMIT + 1 }, (_, index) =>
+          makePost(`${index + 1}`),
+        ),
       },
     });
     expect(response.statusCode).toBe(400);

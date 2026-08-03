@@ -50,7 +50,11 @@ export async function startWorker() {
       return;
     }
 
-    if (config.mode === "live" && !usesPushedInbox() && process.env.RADAR_COLLECTOR_MODE === "stream") {
+    if (
+      config.mode === "live" &&
+      !usesPushedInbox() &&
+      process.env.RADAR_COLLECTOR_MODE === "stream"
+    ) {
       await worker.runOnce(controller.signal);
       await runReconnectingStream({
         source: new XFilteredStreamSource({ bearerToken: requiredEnv("X_BEARER_TOKEN") }),

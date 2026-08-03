@@ -1,5 +1,9 @@
 import { type SourcePostObserved, SourcePostObservedSchema } from "@tibo-radar/contracts";
-import type { TimelineCollectInput, TimelineCollection, TimelineSource } from "@tibo-radar/x-source";
+import type {
+  TimelineCollectInput,
+  TimelineCollection,
+  TimelineSource,
+} from "@tibo-radar/x-source";
 
 export interface InboxReader {
   readInbox(sinceId: string | null, limit: number): Promise<unknown[]>;
