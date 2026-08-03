@@ -10,6 +10,13 @@ const BUCKET_HOURS = 6;
 const BUCKET_MS = BUCKET_HOURS * 60 * 60 * 1_000;
 const MAX_FORECAST_PROBABILITY = 0.99;
 
+const WEATHER_CODE_THRESHOLDS = [
+  { upperExclusive: 0.2, code: "clear" },
+  { upperExclusive: 0.4, code: "partly_cloudy" },
+  { upperExclusive: 0.6, code: "cloudy" },
+  { upperExclusive: 0.8, code: "storm_watch" },
+] as const;
+
 export interface PersistedForecastSignal {
   postId: string;
   observedAt: string;
@@ -241,14 +248,13 @@ function reasonsForBucket(
   ).slice(0, 4);
 }
 
-function weatherCodeFor(
+export function weatherCodeFor(
   probability: number,
 ): "clear" | "partly_cloudy" | "cloudy" | "storm_watch" | "storm_warning" {
-  if (probability < 0.06) return "clear";
-  if (probability < 0.12) return "partly_cloudy";
-  if (probability < 0.2) return "cloudy";
-  if (probability < 0.35) return "storm_watch";
-  return "storm_warning";
+  return (
+    WEATHER_CODE_THRESHOLDS.find(({ upperExclusive }) => probability < upperExclusive)?.code ??
+    "storm_warning"
+  );
 }
 
 function validateTimestamp(value: string, label: string): void {

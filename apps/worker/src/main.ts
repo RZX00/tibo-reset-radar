@@ -17,6 +17,8 @@ import { createDemoFixtures } from "./demo-fixtures.js";
 import { PostgresWorkerRepository } from "./repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
 
+export const DEFAULT_POLL_INTERVAL_MS = 120_000;
+
 export async function startWorker() {
   loadRepositoryEnv();
   const config = TargetConfigSchema.parse(JSON.parse(await readFile(targetConfigPath(), "utf8")));
@@ -57,7 +59,7 @@ export async function startWorker() {
         onError: (error) => console.error("collector stream error", safeMessage(error)),
       });
     } else {
-      const intervalMs = positiveIntegerEnv("POLL_INTERVAL_MS", 300_000);
+      const intervalMs = pollIntervalMs();
       while (!controller.signal.aborted) {
         try {
           await worker.runOnce(controller.signal);
@@ -96,8 +98,16 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name] ?? fallback);
+export function pollIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  return positiveIntegerEnv("POLL_INTERVAL_MS", DEFAULT_POLL_INTERVAL_MS, env);
+}
+
+function positiveIntegerEnv(
+  name: string,
+  fallback: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const value = Number(env[name] ?? fallback);
   if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
   return value;
 }

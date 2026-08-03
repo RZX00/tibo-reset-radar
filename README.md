@@ -18,7 +18,8 @@ pnpm install --frozen-lockfile
 docker compose up -d --build
 ```
 
-Open `http://127.0.0.1:4173`. The checked-in target and page are visibly marked as Demo data.
+Open `http://127.0.0.1:4173`. The checked-in target and page are visibly marked as Demo data. The default collector poll interval is 120 seconds, and the local Compose web port binds to loopback only.
+The weather strip maps daily marginal probability to 晴 (0–19%), 晴间多云 (20–39%), 多云 (40–59%), 雷雨观察 (60–79%), and 暴雨预警 (80–99%).
 
 For process-level development, start PostgreSQL with Compose, then run `pnpm db:migrate`,
 `pnpm dev:api`, `pnpm dev:worker`, and `pnpm dev:web` in separate terminals. Entrypoints load the
@@ -51,6 +52,8 @@ The Chinese-first architecture, model card, data policy, verification evidence, 
 ## Boundaries
 
 - Official X API only; no scraping or browser automation.
+- Filtered Stream mode depends on externally pre-provisioned X rules; this repository does not manage those rules.
+- Polling and stream reconciliation are bounded recovery paths, not a real-time or SLO guarantee; deletion synchronization is not complete.
 - No login, payment, subscription, email, paid API key, or webhook surface.
 - No dependency on the ewo monorepo, database, runtime, or credentials.
 - No real X history or secrets in Git.

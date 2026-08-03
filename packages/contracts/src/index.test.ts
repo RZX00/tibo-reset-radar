@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TargetConfigSchema } from "./index.js";
+import { ResetEventSchema, TargetConfigSchema } from "./index.js";
 
 describe("TargetConfigSchema", () => {
   it("accepts the checked-in demo target shape", () => {
@@ -26,5 +26,17 @@ describe("TargetConfigSchema", () => {
         bankedResetPolicy: "confirm",
       }),
     ).toThrow();
+  });
+
+  it("defaults event correction links for legacy snapshots", () => {
+    expect(
+      ResetEventSchema.parse({
+        eventId: "reset-1",
+        status: "confirmed_reset",
+        occurredAt: "2026-08-03T00:00:00.000Z",
+        scope: "all",
+        evidencePostIds: ["post-1"],
+      }).supersedesEventId,
+    ).toBeNull();
   });
 });

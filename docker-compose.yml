@@ -61,7 +61,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.web
     ports:
-      - "4173:80"
+      - "127.0.0.1:4173:80"
     depends_on:
       - api
 

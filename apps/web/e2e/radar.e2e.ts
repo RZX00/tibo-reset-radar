@@ -44,6 +44,7 @@ test("shows confirmed and public error states", async ({ page }) => {
           occurredAt: "2026-08-03T08:00:00.000Z",
           scope: "all",
           evidencePostIds: ["p1"],
+          supersedesEventId: null,
         },
       },
     });

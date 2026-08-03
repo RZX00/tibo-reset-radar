@@ -7,7 +7,6 @@ COPY packages ./packages
 COPY scripts ./scripts
 COPY db ./db
 COPY config ./config
-COPY fixtures ./fixtures
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
 ENV NODE_ENV=production

@@ -2,6 +2,7 @@ import { TargetConfigSchema } from "@tibo-radar/contracts";
 import { describe, expect, it } from "vitest";
 
 import { createDemoFixtures } from "./demo-fixtures.js";
+import { DEFAULT_POLL_INTERVAL_MS, pollIntervalMs } from "./main.js";
 import { DeterministicOnlySignalAdapter, errorCode } from "./worker.js";
 
 describe("worker support", () => {
@@ -29,5 +30,11 @@ describe("worker support", () => {
   it("reports stable failure codes without leaking error messages", () => {
     expect(errorCode(new TypeError("secret token value"))).toBe("type_error");
     expect(errorCode("bad")).toBe("unknown_error");
+  });
+
+  it("defaults collector polling to 120 seconds", () => {
+    expect(DEFAULT_POLL_INTERVAL_MS).toBe(120_000);
+    expect(pollIntervalMs({})).toBe(120_000);
+    expect(pollIntervalMs({ POLL_INTERVAL_MS: "60000" })).toBe(60_000);
   });
 });

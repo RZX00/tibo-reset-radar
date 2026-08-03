@@ -133,9 +133,10 @@ export class PostgresRadarReadStore implements RadarReadStore {
       occurred_at: Date | null;
       scope: string;
       evidence_post_ids: unknown;
+      supersedes_event_id: string | null;
     }>(
-      `SELECT event_id, status, occurred_at, scope, evidence_post_ids
-       FROM reset_events ORDER BY updated_at DESC LIMIT 1`,
+      `SELECT event_id, status, occurred_at, scope, evidence_post_ids, supersedes_event_id
+       FROM reset_events ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
     );
     const row = result.rows[0];
     if (!row) return null;
@@ -145,6 +146,7 @@ export class PostgresRadarReadStore implements RadarReadStore {
       occurredAt: row.occurred_at?.toISOString() ?? null,
       scope: row.scope,
       evidencePostIds: Array.isArray(row.evidence_post_ids) ? row.evidence_post_ids : [],
+      supersedesEventId: row.supersedes_event_id,
     });
   }
 }

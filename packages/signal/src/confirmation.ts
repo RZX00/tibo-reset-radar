@@ -112,6 +112,7 @@ function makeEvent(
     occurredAt,
     scope: extraction.scope,
     evidencePostIds: [post.postId],
+    supersedesEventId: null,
   });
 }
 

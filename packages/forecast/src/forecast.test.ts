@@ -8,6 +8,7 @@ import {
   type ForecastGenerationInput,
   generateForecast,
   type PersistedForecastSignal,
+  weatherCodeFor,
 } from "./index.js";
 
 const GENERATED_AT = "2026-08-03T00:00:00.000Z";
@@ -139,6 +140,23 @@ describe("activity and freshness derivation", () => {
       lagSeconds: null,
       confidence: 0.15,
     });
+  });
+});
+
+describe("weather probability mapping", () => {
+  it.each([
+    [0, "clear"],
+    [0.19, "clear"],
+    [0.2, "partly_cloudy"],
+    [0.39, "partly_cloudy"],
+    [0.4, "cloudy"],
+    [0.59, "cloudy"],
+    [0.6, "storm_watch"],
+    [0.79, "storm_watch"],
+    [0.8, "storm_warning"],
+    [0.99, "storm_warning"],
+  ] as const)("maps %s to %s", (probability, expected) => {
+    expect(weatherCodeFor(probability)).toBe(expected);
   });
 });
 

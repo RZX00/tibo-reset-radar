@@ -84,25 +84,58 @@ export class PostgresWorkerRepository {
   async saveConfirmation(post: SourcePostObserved, decision: ConfirmationDecision): Promise<void> {
     if (!decision.event) return;
     const fingerprint = createHash("sha256").update(`post:${post.postId}`).digest("hex");
-    await this.pool.query(
-      `INSERT INTO reset_events (
-         event_id, status, occurred_at, scope, evidence_post_ids, fingerprint, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, now(), now())
-       ON CONFLICT (fingerprint) DO UPDATE SET
-         status = EXCLUDED.status,
-         occurred_at = EXCLUDED.occurred_at,
-         scope = EXCLUDED.scope,
-         evidence_post_ids = EXCLUDED.evidence_post_ids,
-         updated_at = now()`,
-      [
-        decision.event.eventId,
-        decision.event.status,
-        decision.event.occurredAt,
-        decision.event.scope,
-        JSON.stringify(decision.event.evidencePostIds),
-        fingerprint,
-      ],
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query<{
+        event_id: string;
+        supersedes_event_id: string | null;
+      }>(
+        "SELECT event_id, supersedes_event_id FROM reset_events WHERE fingerprint = $1 FOR UPDATE",
+        [fingerprint],
+      );
+      let supersedesEventId = existing.rows[0]?.supersedes_event_id ?? null;
+      if (!existing.rows[0]) {
+        const previous = await client.query<{ event_id: string }>(
+          `SELECT event_id FROM reset_events
+           ORDER BY updated_at DESC, created_at DESC LIMIT 1
+           FOR UPDATE`,
+        );
+        supersedesEventId = previous.rows[0]?.event_id ?? null;
+      }
+
+      await client.query(
+        `INSERT INTO reset_events (
+           event_id, status, occurred_at, scope, evidence_post_ids, fingerprint,
+           supersedes_event_id, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, now(), now())
+         ON CONFLICT (fingerprint) DO UPDATE SET
+           status = EXCLUDED.status,
+           occurred_at = EXCLUDED.occurred_at,
+           scope = EXCLUDED.scope,
+           evidence_post_ids = EXCLUDED.evidence_post_ids,
+           supersedes_event_id = COALESCE(
+             reset_events.supersedes_event_id,
+             EXCLUDED.supersedes_event_id
+           ),
+           updated_at = now()`,
+        [
+          decision.event.eventId,
+          decision.event.status,
+          decision.event.occurredAt,
+          decision.event.scope,
+          JSON.stringify(decision.event.evidencePostIds),
+          fingerprint,
+          supersedesEventId,
+        ],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getForecastContext(): Promise<ForecastContext> {
@@ -127,9 +160,10 @@ export class PostgresWorkerRepository {
         occurred_at: Date | null;
         scope: string;
         evidence_post_ids: unknown;
+        supersedes_event_id: string | null;
       }>(
-        `SELECT event_id, status, occurred_at, scope, evidence_post_ids FROM reset_events
-         WHERE status = 'confirmed_reset' ORDER BY updated_at DESC LIMIT 1`,
+        `SELECT event_id, status, occurred_at, scope, evidence_post_ids, supersedes_event_id
+         FROM reset_events ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
       ),
       this.pool.query<{
         last_observed_at: Date | null;
@@ -153,19 +187,21 @@ export class PostgresWorkerRepository {
       previousSnapshot: forecastResult.rows[0]
         ? ForecastSnapshotSchema.parse(forecastResult.rows[0].summary_json)
         : null,
-      confirmedSignal: event
-        ? {
-            eventId: event.event_id,
-            status: event.status,
-            occurredAt: event.occurred_at?.toISOString() ?? null,
-            scope: event.scope,
-            evidencePostIds: Array.isArray(event.evidence_post_ids)
-              ? event.evidence_post_ids.filter(
-                  (value): value is string => typeof value === "string",
-                )
-              : [],
-          }
-        : null,
+      confirmedSignal:
+        event?.status === "confirmed_reset"
+          ? {
+              eventId: event.event_id,
+              status: event.status,
+              occurredAt: event.occurred_at?.toISOString() ?? null,
+              scope: event.scope,
+              evidencePostIds: Array.isArray(event.evidence_post_ids)
+                ? event.evidence_post_ids.filter(
+                    (value): value is string => typeof value === "string",
+                  )
+                : [],
+              supersedesEventId: event.supersedes_event_id,
+            }
+          : null,
       lastObservedAt: status?.last_observed_at?.toISOString() ?? null,
       lastPublicActivityAt: status?.last_public_activity_at?.toISOString() ?? null,
       consecutiveFailures: status?.consecutive_failures ?? 0,

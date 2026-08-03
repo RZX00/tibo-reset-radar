@@ -50,7 +50,7 @@ services:
       DATABASE_URL: postgres://radar:${POSTGRES_PASSWORD}@postgres:5432/radar
       TARGET_CONFIG_PATH: /app/config/target.json
       RADAR_COLLECTOR_MODE: ${RADAR_COLLECTOR_MODE:-poll}
-      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-300000}
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-120000}
       X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
