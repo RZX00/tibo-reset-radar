@@ -34,7 +34,8 @@ export interface ForecastV2Post {
 
 export interface ForecastV2Signal {
   postId: string;
-  observedAt: string;
+  /** When the source claim was published or edited, never when extraction happened. */
+  sourceAt: string;
   extraction: SignalExtraction;
 }
 
@@ -203,7 +204,7 @@ function buildForecastV2FeatureSnapshot(
   const baselineBins = buildBaselineBins(intervalHours, hoursSinceLastReset);
   const circadian = buildCircadianFeatures(input.posts, generatedMs);
   const activity = buildActivityFeatures(input.posts, generatedMs);
-  const text = buildTextFeatures(input.signals, generatedMs);
+  const text = buildTextFeatures(input.signals, generatedMs, lastResetMs);
   const external = buildExternalFeatures(input.externalEvents, generatedMs);
   const targetCoverage = clamp(input.targetCoverage, 0, 1);
   const externalCoverage = clamp(input.externalCoverage, 0, 1);
@@ -376,7 +377,11 @@ function buildActivityFeatures(posts: readonly ForecastV2Post[], generatedMs: nu
   };
 }
 
-function buildTextFeatures(signals: readonly ForecastV2Signal[], generatedMs: number) {
+function buildTextFeatures(
+  signals: readonly ForecastV2Signal[],
+  generatedMs: number,
+  lastResetMs: number | null,
+) {
   let explicitFuture = 0;
   let weakFuture = 0;
   let retracted = 0;
@@ -385,15 +390,16 @@ function buildTextFeatures(signals: readonly ForecastV2Signal[], generatedMs: nu
   const bucketScores = Array.from({ length: BUCKET_COUNT }, () => 0);
   const bucketReasonCodes = Array.from({ length: BUCKET_COUNT }, () => [] as string[]);
   for (const signal of signals) {
-    const observedMs = optionalTimestamp(signal.observedAt);
+    const sourceMs = optionalTimestamp(signal.sourceAt);
     if (
-      observedMs === null ||
-      observedMs > generatedMs ||
-      generatedMs - observedMs > SIGNAL_WINDOW_MS
+      sourceMs === null ||
+      sourceMs > generatedMs ||
+      generatedMs - sourceMs > SIGNAL_WINDOW_MS ||
+      (lastResetMs !== null && sourceMs <= lastResetMs)
     )
       continue;
     const extraction = signal.extraction;
-    const ageHours = (generatedMs - observedMs) / HOUR_MS;
+    const ageHours = (generatedMs - sourceMs) / HOUR_MS;
     const common = extraction.resetRelevance * extraction.confidence * Math.exp(-ageHours / 72);
     const explicit = extraction.futureCommitment === "explicit" ? common : 0;
     const weak = extraction.futureCommitment === "weak" ? common : 0;

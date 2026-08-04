@@ -68,7 +68,11 @@ export class RadarWorker {
   async processPendingSignals(): Promise<void> {
     for (const post of await this.#repository.getPendingPosts()) {
       const result = await extractSignal(
-        { post, resetDefinition: this.#target.resetDefinition, referenceTime: post.observedAt },
+        {
+          post,
+          resetDefinition: this.#target.resetDefinition,
+          referenceTime: post.editedAt ?? post.createdAt,
+        },
         this.#signalAdapter,
       );
       await this.#repository.saveExtraction(post, result);
@@ -86,7 +90,7 @@ export class RadarWorker {
 
   async generateForecast(): Promise<void> {
     const generatedAt = this.#now().toISOString();
-    const context = await this.#repository.getForecastContext();
+    const context = await this.#repository.getForecastContext(generatedAt);
     const dataFreshness = deriveFreshness(generatedAt, context.lastObservedAt);
     const activity = deriveActivityStatus(
       generatedAt,

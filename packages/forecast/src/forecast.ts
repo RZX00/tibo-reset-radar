@@ -12,7 +12,8 @@ const MAX_FORECAST_PROBABILITY = 0.99;
 
 export interface PersistedForecastSignal {
   postId: string;
-  observedAt: string;
+  /** When the source claim was published or edited, never when a backfill happened. */
+  sourceAt: string;
   extraction: SignalExtraction;
 }
 
@@ -124,10 +125,10 @@ export function generateForecast(input: ForecastGenerationInput): ForecastSnapsh
 }
 
 function weightSignal(signal: PersistedForecastSignal, generatedMs: number): WeightedSignal {
-  const observedMs = Date.parse(signal.observedAt);
-  if (!Number.isFinite(observedMs))
-    throw new Error(`Signal ${signal.postId} has an invalid observedAt`);
-  const ageHours = Math.max(0, (generatedMs - observedMs) / (60 * 60 * 1_000));
+  const sourceMs = Date.parse(signal.sourceAt);
+  if (!Number.isFinite(sourceMs))
+    throw new Error(`Signal ${signal.postId} has an invalid sourceAt`);
+  const ageHours = Math.max(0, (generatedMs - sourceMs) / (60 * 60 * 1_000));
   const recency = Math.exp(-ageHours / 72);
   const extraction = signal.extraction;
   const stateWeight: Record<SignalExtraction["explicitResetState"], number> = {

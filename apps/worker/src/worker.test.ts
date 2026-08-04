@@ -1,4 +1,5 @@
 import { TargetConfigSchema } from "@tibo-radar/contracts";
+import type { SignalExtractionInput, SignalModelAdapter } from "@tibo-radar/signal";
 import type { TimelineSource } from "@tibo-radar/x-source";
 import { describe, expect, it, vi } from "vitest";
 
@@ -38,6 +39,54 @@ describe("worker support", () => {
     expect(DEFAULT_POLL_INTERVAL_MS).toBe(120_000);
     expect(pollIntervalMs({})).toBe(120_000);
     expect(pollIntervalMs({ POLL_INTERVAL_MS: "60000" })).toBe(60_000);
+  });
+
+  it("anchors relative signal hints to source time instead of backfill time", async () => {
+    const target = TargetConfigSchema.parse({
+      schemaVersion: "1.0",
+      mode: "demo",
+      target: { userId: "demo", handle: "tibo_demo", displayName: "Tibo" },
+      authoritativeUserIds: ["demo"],
+      resetDefinition: "A usage reset",
+      bankedResetPolicy: "forecast_only",
+    });
+    const fixture = createDemoFixtures(target, new Date("2026-08-03T12:00:00.000Z"))[0];
+    if (!fixture) throw new Error("demo fixture is missing");
+    const post = {
+      ...fixture,
+      createdAt: "2026-08-01T08:00:00.000Z",
+      observedAt: "2026-08-03T12:00:00.000Z",
+    };
+    const extract = vi.fn(async (_input: SignalExtractionInput) => ({
+      explicitResetState: "none",
+      futureCommitment: "none",
+      timeHint: { kind: "none", startAt: null, endAt: null, rawPhrase: null },
+      scope: "unknown",
+      incidentSignal: 0,
+      milestoneSignal: 0,
+      resetRelevance: 0,
+      sentiment: "neutral",
+      confidence: 1,
+      evidenceSpans: [],
+      reasonCode: "no_signal",
+    }));
+    const signalAdapter = { model: "capture", extract } satisfies SignalModelAdapter;
+    const repository = {
+      getPendingPosts: async () => [post],
+      saveExtraction: async () => undefined,
+      saveConfirmation: async () => undefined,
+    } as unknown as SqliteWorkerRepository;
+    const worker = new RadarWorker({
+      source: { collect: async () => ({ posts: [], nextSinceId: null }) },
+      repository,
+      target,
+      signalAdapter,
+    });
+
+    await worker.processPendingSignals();
+
+    expect(extract).toHaveBeenCalledOnce();
+    expect(extract.mock.calls[0]?.[0]?.referenceTime).toBe(post.createdAt);
   });
 
   it("keeps a completed v1 forecast when the v2 shadow path fails", async () => {

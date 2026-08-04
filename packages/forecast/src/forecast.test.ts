@@ -189,7 +189,7 @@ function randomSignal(index: number, random: () => number): PersistedForecastSig
   ).toISOString();
   return {
     postId: `post-${index}`,
-    observedAt: new Date(Date.parse(GENERATED_AT) - random() * 96 * 60 * 60 * 1_000).toISOString(),
+    sourceAt: new Date(Date.parse(GENERATED_AT) - random() * 96 * 60 * 60 * 1_000).toISOString(),
     extraction: SignalExtractionSchema.parse({
       explicitResetState: state,
       futureCommitment: commitments[Math.floor(random() * commitments.length)] ?? "none",
