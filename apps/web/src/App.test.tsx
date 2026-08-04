@@ -130,4 +130,36 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
     expect(await screen.findByRole("status")).toHaveTextContent("分享失败，请稍后重试");
   });
+
+  it("labels every probability with the interval it belongs to", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+    // Pin the timezone so the expected labels do not depend on the machine running the test.
+    await userEvent.selectOptions(screen.getByLabelText("时区"), "UTC");
+
+    // Buckets are 6 hours: 08:00 UTC -> 14:00 UTC on the same local day.
+    expect(screen.getAllByText("8月3日 08:00–14:00").length).toBeGreaterThan(0);
+    // The peak label must be a range too, never a single instant.
+    expect(screen.getByText(/峰值时段 8月\d+日 \d{2}:\d{2}–/)).toBeInTheDocument();
+    // A window that crosses midnight repeats the closing date so it cannot read backwards.
+    expect(screen.getByText("8月3日 20:00–8月4日 02:00")).toBeInTheDocument();
+    expect(screen.getByText(/每格是该 6 小时区间内发生的概率/)).toBeInTheDocument();
+
+    const bar = screen.getAllByRole("progressbar")[0];
+    expect(bar).toHaveAttribute("aria-label", "8月3日 08:00–14:00 区间概率");
+    expect(
+      screen.getByRole("button", { name: /^DAY 1 8月3日 08:00–8月4日 08:00 区间概率/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("formats both endpoints in the selected timezone", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("时区"), "America/Los_Angeles");
+    // 08:00Z–14:00Z is 01:00–07:00 in Los Angeles on the same local day.
+    await waitFor(() =>
+      expect(screen.getAllByText("8月3日 01:00–07:00").length).toBeGreaterThan(0),
+    );
+  });
 });

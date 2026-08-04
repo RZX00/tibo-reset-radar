@@ -98,6 +98,38 @@ function dateTime(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
+/**
+ * Every probability on this page belongs to an interval, never to an instant. Rendering only
+ * `startAt` made `10:07` read as a predicted reset time when it actually means `10:07–16:07`, so
+ * ranges are the only honest label. The closing date repeats whenever the window crosses midnight.
+ */
+function timeRange(startAt: string, endAt: string, timezone: string): string {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  const sameLocalDay = localDay(start, timezone) === localDay(end, timezone);
+  return sameLocalDay
+    ? `${dateTime(startAt, timezone)}–${clockTime(endAt, timezone)}`
+    : `${dateTime(startAt, timezone)}–${dateTime(endAt, timezone)}`;
+}
+
+function clockTime(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value));
+}
+
+function localDay(value: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
 function relativeTime(value: string | null): string {
   if (!value) return "暂无";
   const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
@@ -146,6 +178,9 @@ function DayCard({
 }) {
   const meta = signalMeta[day.signalLevel];
   const Icon = meta.icon;
+  // The card is too narrow for a full range, so the visible label says 起 and the accessible name
+  // carries the interval the percentage actually belongs to.
+  const range = timeRange(day.startAt, day.endAt, timezone);
   return (
     <button
       type="button"
@@ -153,9 +188,10 @@ function DayCard({
       data-selected={selected}
       onClick={onSelect}
       aria-pressed={selected}
+      aria-label={`DAY ${day.dayIndex} ${range} 区间概率 ${percent(day.intervalProbability)}`}
     >
       <span className="day-index">DAY {day.dayIndex}</span>
-      <span className="day-window">{dateTime(day.startAt, timezone)}</span>
+      <span className="day-window">{dateTime(day.startAt, timezone)} 起</span>
       <Icon size={32} strokeWidth={1.6} />
       <strong>{percent(day.intervalProbability)}</strong>
       <span className="signal-label">{meta.label}</span>
@@ -430,7 +466,7 @@ export function App() {
           </div>
           {topBucket ? (
             <p>
-              峰值时段 {dateTime(topBucket.startAt, timezone)} ·{" "}
+              峰值时段 {timeRange(topBucket.startAt, topBucket.endAt, timezone)} ·{" "}
               {percent(topBucket.intervalProbability)}
             </p>
           ) : null}
@@ -452,19 +488,19 @@ export function App() {
         <div className="detail-heading">
           <div>
             <span>DAY {day.dayIndex} · 6H WINDOWS</span>
-            <h2>{dateTime(day.startAt, timezone)} 起</h2>
+            <h2>{timeRange(day.startAt, day.endAt, timezone)}</h2>
           </div>
-          <p>{signalMeta[day.signalLevel].label}</p>
+          <p>{signalMeta[day.signalLevel].label} · 每格是该 6 小时区间内发生的概率</p>
         </div>
         <div className="bucket-grid">
           {day.buckets.map((bucket) => (
             <div className="bucket" key={bucket.index}>
-              <span>{dateTime(bucket.startAt, timezone)}</span>
+              <span>{timeRange(bucket.startAt, bucket.endAt, timezone)}</span>
               <strong>{percent(bucket.intervalProbability)}</strong>
               <div
                 className="probability-track"
                 role="progressbar"
-                aria-label="时段概率"
+                aria-label={`${timeRange(bucket.startAt, bucket.endAt, timezone)} 区间概率`}
                 aria-valuemin={0}
                 aria-valuemax={99}
                 aria-valuenow={Math.round(bucket.intervalProbability * 100)}

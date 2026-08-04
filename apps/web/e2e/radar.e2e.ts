@@ -33,6 +33,30 @@ test("renders a stable radar and supports the primary interactions", async ({ pa
   }
 });
 
+test("presents every probability as a time range", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
+  await page.getByLabel("时区").selectOption("UTC");
+
+  // A percentage belongs to an interval; a bare start time reads as a predicted reset moment.
+  await expect(page.getByText("峰值时段", { exact: false })).toContainText(/\d{2}:\d{2}–/);
+  await expect(page.getByText("8月3日 08:00–14:00").first()).toBeVisible();
+  // Crossing midnight has to stay readable in both directions.
+  await expect(page.getByText("8月3日 20:00–8月4日 02:00")).toBeVisible();
+  await expect(page.getByText(/每格是该 6 小时区间内发生的概率/)).toBeVisible();
+  await expect(page.getByRole("progressbar").first()).toHaveAttribute(
+    "aria-label",
+    "8月3日 08:00–14:00 区间概率",
+  );
+
+  await page.getByLabel("时区").selectOption("America/Los_Angeles");
+  await expect(page.getByText("8月3日 01:00–07:00").first()).toBeVisible();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
 test("shows confirmed and public error states", async ({ page }) => {
   await page.route("**/api/reset-status", async (route) => {
     await route.fulfill({

@@ -404,8 +404,12 @@ h2 {
   border-left: 1px solid var(--line);
 }
 .bucket > span {
+  display: block;
   color: var(--muted);
   font-size: 0.76rem;
+  /* A range is roughly twice as long as the old start-only label and four of these share a row. */
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .bucket > strong {
   display: block;
