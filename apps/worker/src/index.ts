@@ -3,4 +3,5 @@ export * from "./external-events.js";
 export * from "./inbox-source.js";
 export * from "./main.js";
 export * from "./repository.js";
+export * from "./retention.js";
 export * from "./worker.js";

@@ -35,7 +35,11 @@ export async function startApi() {
   const worker =
     process.env.RADAR_RUN_WORKER === "false"
       ? null
-      : startWorkerLoop({ db, onError: (error) => app.log.error(error) });
+      : startWorkerLoop({
+          db,
+          onError: (error) => app.log.error(error),
+          onRetention: (report) => app.log.info({ retention: report }, "pruned old snapshots"),
+        });
 
   app.addHook("onClose", async () => {
     await worker?.stop();
