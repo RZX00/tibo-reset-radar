@@ -817,10 +817,14 @@ h2 {
     padding: 20px 16px;
   }
   .verdict-number {
-    width: 100%;
+    /* width:100% on a flex child that also refuses to shrink pushes the card past the viewport.
+       Taking a full basis wraps it onto its own line and lets it shrink with the screen. */
+    flex: 1 1 100%;
+    min-width: 0;
     text-align: left;
     display: flex;
     align-items: baseline;
+    flex-wrap: wrap;
     gap: 10px;
   }
   .verdict-number span {
