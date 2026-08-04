@@ -7,7 +7,8 @@ test.beforeEach(async ({ page }) => {
 test("renders a stable radar and supports the primary interactions", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
-  await expect(page.getByLabel("累计概率")).toContainText("168 小时");
+  // The hero answers first; the cumulative band now lives inside the detail section.
+  await expect(page.getByText("7 天", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("演示数据", { exact: false })).toBeVisible();
 
   const edition = await page.locator(".edition").boundingBox();
@@ -20,6 +21,7 @@ test("renders a stable radar and supports the primary interactions", async ({ pa
   );
 
   await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
+  await expect(page.getByLabel("累计概率")).toContainText("168 小时");
   await page.getByRole("button", { name: /DAY 4/ }).click();
   await expect(page.getByText("DAY 4 · 6H WINDOWS")).toBeVisible();
   await page.getByRole("button", { name: /近 24 小时原始推文/ }).click();
