@@ -17,6 +17,7 @@ import { createDemoFixtures } from "./demo-fixtures.js";
 import { OpenAIStatusSource } from "./external-events.js";
 import { InboxTimelineSource } from "./inbox-source.js";
 import { SqliteWorkerRepository } from "./repository.js";
+import { applyRetention, type RetentionReport, retentionPolicyFromEnv } from "./retention.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
 
 export const DEFAULT_POLL_INTERVAL_MS = 120_000;
@@ -24,6 +25,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 120_000;
 export interface WorkerLoopOptions {
   db: RadarDatabase;
   onError?: (error: unknown) => void;
+  onRetention?: (report: RetentionReport) => void;
 }
 
 export interface WorkerLoopHandle {
@@ -69,6 +71,9 @@ export async function createWorker(db: RadarDatabase): Promise<RadarWorker> {
 export function startWorkerLoop(options: WorkerLoopOptions): WorkerLoopHandle {
   const controller = new AbortController();
   const intervalMs = pollIntervalMs();
+  const retentionIntervalMs = positiveIntegerEnv("RADAR_RETENTION_INTERVAL_MS", 60 * 60 * 1_000);
+  const policy = retentionPolicyFromEnv();
+  let nextRetentionAt = 0;
   const finished = (async () => {
     const worker = await createWorker(options.db);
     while (!controller.signal.aborted) {
@@ -76,6 +81,16 @@ export function startWorkerLoop(options: WorkerLoopOptions): WorkerLoopHandle {
         await worker.runOnce(controller.signal);
       } catch (error) {
         options.onError?.(error);
+      }
+      // A snapshot per cycle fills a disk on its own; pruning has to live where the cycle does.
+      if (Date.now() >= nextRetentionAt) {
+        nextRetentionAt = Date.now() + retentionIntervalMs;
+        try {
+          const report = await applyRetention(options.db, new Date(), policy);
+          if (report.reclaimed) options.onRetention?.(report);
+        } catch (error) {
+          options.onError?.(error);
+        }
       }
       await abortableDelay(intervalMs, controller.signal);
     }

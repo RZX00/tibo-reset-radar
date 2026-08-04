@@ -164,6 +164,15 @@ A tagged release publishes one immutable image to GHCR. Production deployment an
 `deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and `main`
 image tags are rejected. Rolling back only changes the image — the SQLite file is untouched.
 
+### Retention
+
+The worker writes a forecast snapshot every cycle, so the collector prunes hourly instead of
+letting the file grow forever. Snapshots inside `RADAR_RETENTION_FULL_HOURS` (6) are kept whole,
+the last `RADAR_RETENTION_HOURLY_DAYS` (30) thin to one per hour, and older ones thin to one per
+day; delivered inbox rows are dropped after `RADAR_RETENTION_INBOX_DAYS` (7). The newest snapshot —
+the one the API serves — is never a deletion candidate, and posts, extractions and reset events are
+never pruned at all: they are the evidence.
+
 The Chinese-first architecture, model card, data policy, verification evidence, and runbook are in
 [`docs/2026-08-03-architecture-model-and-operations.zh.html`](docs/2026-08-03-architecture-model-and-operations.zh.html).
 
