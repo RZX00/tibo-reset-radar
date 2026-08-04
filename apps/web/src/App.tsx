@@ -49,15 +49,37 @@ const activityMeta: Record<ActivityStatus, { label: string; note: string }> = {
 };
 
 const reasonLabels: Record<string, string> = {
+  recent_activity: "近期活动",
   active_activity: "近期公开活动",
   cooling_activity: "活动热度下降",
   quiet_activity: "低活动基线",
   data_delayed_activity: "数据延迟",
+  rules_none: "没有明确 Reset 信号",
   rules_future: "未来 Reset 承诺",
+  rules_rolling_out_now: "Reset 正在进行",
+  rules_completed: "Reset 已完成语义",
+  rules_limited: "有限范围 Reset",
+  rules_retracted: "Reset 撤回语义",
+  rules_ambiguous: "Reset 语义不确定",
   rules_reset_mention: "Reset 相关表述",
   rules_milestone: "里程碑进展",
+  rules_incident: "故障信号",
   rules_incident_and_milestone: "事件与里程碑信号",
+  source_not_authoritative: "来源非权威",
+  source_not_first_party_statement: "不是第一方表述",
+  banked_reset_ignored: "储备 Reset 已忽略",
+  banked_reset_forecast_only: "储备 Reset 仅用于预测",
+  authoritative_retraction: "权威撤回声明",
+  retraction_requires_deterministic_evidence: "撤回证据仍需确认",
+  no_completed_reset_claim: "没有已完成 Reset 声明",
+  future_or_uncertain_language: "未来或不确定表述",
+  completion_requires_deterministic_evidence: "完成证据仍需确认",
+  authoritative_completed_reset: "权威完成声明",
 };
+
+function reasonLabel(reason: string): string {
+  return reasonLabels[reason] ?? "其他信号";
+}
 
 const skeletonKeys = ["day-1", "day-2", "day-3", "day-4", "day-5", "day-6", "day-7"];
 
@@ -182,6 +204,7 @@ export function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
   const [eventsOpen, setEventsOpen] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const controller = new AbortController();
@@ -230,14 +253,30 @@ export function App() {
 
   async function share() {
     if (!forecast) return;
+    setShareFeedback(null);
     const payload = {
       title: "Tibo Reset Radar",
       text: `未来 7 天累计 Reset 概率 ${percent(forecast.cumulative.within168h)}`,
       url: window.location.href,
     };
-    track("share_forecast", { probability: Math.round(forecast.cumulative.within168h * 100) });
-    if (navigator.share) await navigator.share(payload).catch(() => undefined);
-    else await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+    try {
+      if (navigator.share) {
+        await navigator.share(payload);
+        setShareFeedback("分享成功");
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(window.location.href);
+        setShareFeedback("链接已复制");
+      } else {
+        throw new Error("share is unavailable");
+      }
+      track("share_forecast", { probability: Math.round(forecast.cumulative.within168h * 100) });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setShareFeedback("已取消分享");
+      } else {
+        setShareFeedback("分享失败，请稍后重试");
+      }
+    }
   }
 
   if (!data && !error) return <Skeleton />;
@@ -299,6 +338,12 @@ export function App() {
           </a>
         </div>
       </header>
+
+      {shareFeedback ? (
+        <p className="action-feedback" role="status" aria-live="polite">
+          {shareFeedback}
+        </p>
+      ) : null}
 
       {data.status.demoMode ? (
         <div className="demo-band">演示数据 · 真实 Tibo 身份与运行凭据尚未配置</div>
@@ -426,12 +471,7 @@ export function App() {
               >
                 <span style={{ transform: `scaleX(${bucket.intervalProbability})` }} />
               </div>
-              <p>
-                {bucket.topReasonCodes
-                  .slice(0, 2)
-                  .map((reason) => reasonLabels[reason] ?? reason.replaceAll("_", " "))
-                  .join(" · ") || "历史基线"}
-              </p>
+              <p>{bucket.topReasonCodes.slice(0, 2).map(reasonLabel).join(" · ") || "历史基线"}</p>
             </div>
           ))}
         </div>
@@ -445,7 +485,7 @@ export function App() {
         <div className="signal-list">
           {topReasons.map(([reason, count]) => (
             <div key={reason}>
-              <strong>{reasonLabels[reason] ?? reason.replaceAll("_", " ")}</strong>
+              <strong>{reasonLabel(reason)}</strong>
               <span>{count} 个时段</span>
             </div>
           ))}

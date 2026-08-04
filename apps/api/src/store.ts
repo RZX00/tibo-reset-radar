@@ -139,9 +139,10 @@ export class SqliteRadarReadStore implements RadarReadStore {
       occurred_at: string | null;
       scope: string;
       evidence_post_ids: string;
+      supersedes_event_id: string | null;
     }>(
-      `SELECT event_id, status, occurred_at, scope, evidence_post_ids
-       FROM reset_events ORDER BY updated_at DESC LIMIT 1`,
+      `SELECT event_id, status, occurred_at, scope, evidence_post_ids, supersedes_event_id
+       FROM reset_events ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
     );
     const row = result.rows[0];
     if (!row) return null;
@@ -151,6 +152,7 @@ export class SqliteRadarReadStore implements RadarReadStore {
       occurredAt: row.occurred_at,
       scope: row.scope,
       evidencePostIds: parseJsonColumn<string[]>(row.evidence_post_ids, []),
+      supersedesEventId: row.supersedes_event_id,
     });
   }
 }

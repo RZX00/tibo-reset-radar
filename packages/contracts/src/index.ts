@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./forecast-v2.js";
+
 export const ActivityStatusSchema = z.enum(["active", "cooling", "quiet", "data_delayed"]);
 export type ActivityStatus = z.infer<typeof ActivityStatusSchema>;
 
@@ -113,6 +115,7 @@ export const ResetEventSchema = z.object({
   occurredAt: z.string().datetime().nullable(),
   scope: z.string(),
   evidencePostIds: z.array(z.string()).min(1),
+  supersedesEventId: z.string().nullable().default(null),
 });
 export type ResetEvent = z.infer<typeof ResetEventSchema>;
 

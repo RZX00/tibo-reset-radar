@@ -11,7 +11,9 @@ import { InboxTimelineSource } from "../apps/worker/src/inbox-source.js";
 import { SqliteWorkerRepository } from "../apps/worker/src/repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "../apps/worker/src/worker.js";
 import {
+  ExternalEventSchema,
   ForecastSnapshotSchema,
+  ShadowForecastV2Schema,
   SourcePostObservedSchema,
   TargetConfigSchema,
 } from "../packages/contracts/dist/index.js";
@@ -36,6 +38,24 @@ const worker = new RadarWorker({
 });
 
 try {
+  const externalObservedAt = new Date().toISOString();
+  await repository.upsertExternalEvents([
+    ExternalEventSchema.parse({
+      eventId: "e2e-openai-status",
+      sourceType: "official_status",
+      provider: "OpenAI",
+      eventType: "codex_incident",
+      title: "E2E-only Codex incident",
+      sourceUrl: "https://status.openai.com/incidents/e2e-only",
+      occurredAt: new Date(Date.now() - 60 * 60 * 1_000).toISOString(),
+      knownAt: externalObservedAt,
+      endedAt: null,
+      relevance: 1,
+      severity: 0.75,
+      metadata: { testOnly: true },
+    }),
+  ]);
+  await repository.recordExternalSuccess("e2e-openai-status", externalObservedAt);
   await worker.runOnce();
 
   const originalText = "A test-only Reset timing note.";
@@ -104,6 +124,47 @@ try {
   );
   assert.equal(Number(backfilled.rows[0]?.count), 2, "backfilled history must not be stranded");
 
+  const confirmationPostId = `e2e-confirm-${Date.now()}`;
+  const confirmationPost = makeE2ePost(
+    target,
+    confirmationPostId,
+    "The reset is complete.",
+    new Date().toISOString(),
+  );
+  await repository.persistBatch("e2e-confirmation", {
+    posts: [confirmationPost],
+    nextSinceId: null,
+  });
+  await worker.processPendingSignals();
+  await worker.generateForecast();
+  const confirmedContext = await repository.getForecastContext();
+  assert.equal(confirmedContext.confirmedSignal?.status, "confirmed_reset");
+  const confirmedEventId = confirmedContext.confirmedSignal?.eventId;
+  assert.ok(confirmedEventId);
+  const confirmedSnapshotResult = await db.query<{ summary_json: string }>(
+    "SELECT summary_json FROM forecast_runs WHERE status = 'completed' ORDER BY generated_at DESC LIMIT 1",
+  );
+  assert.equal(
+    ForecastSnapshotSchema.parse(
+      JSON.parse(confirmedSnapshotResult.rows[0]?.summary_json ?? "null"),
+    ).confirmedSignal?.status,
+    "confirmed_reset",
+  );
+
+  const retractionPostId = `e2e-retract-${Date.now()}`;
+  const retractionPost = makeE2ePost(
+    target,
+    retractionPostId,
+    "The reset has been cancelled.",
+    new Date(Date.now() + 1_000).toISOString(),
+  );
+  await repository.persistBatch("e2e-confirmation", {
+    posts: [retractionPost],
+    nextSinceId: null,
+  });
+  await worker.processPendingSignals();
+  await worker.generateForecast();
+
   const snapshotResult = await db.query<{ summary_json: string }>(
     "SELECT summary_json FROM forecast_runs WHERE status = 'completed' ORDER BY generated_at DESC LIMIT 1",
   );
@@ -112,6 +173,50 @@ try {
   );
   assert.equal(snapshot.days.flatMap((day) => day.buckets).length, 28);
   assert.equal(snapshot.dataFreshness.status, "fresh");
+  assert.equal(snapshot.confirmedSignal, null, "retraction must clear forecast.confirmedSignal");
+
+  const shadowResult = await db.query<{
+    summary_json: string;
+    features_json: string;
+  }>(
+    `SELECT sfr.summary_json, ffs.features_json
+     FROM shadow_forecast_runs sfr
+     JOIN forecast_feature_snapshots ffs ON ffs.snapshot_id = sfr.feature_snapshot_id
+     ORDER BY sfr.generated_at DESC LIMIT 1`,
+  );
+  const shadow = ShadowForecastV2Schema.parse(
+    JSON.parse(shadowResult.rows[0]?.summary_json ?? "null"),
+  );
+  const shadowFeatures = JSON.parse(shadowResult.rows[0]?.features_json ?? "null") as {
+    confirmedResetCount?: number;
+    external?: { openAiIncident?: number };
+    coverage?: { external?: number };
+  };
+  assert.equal(shadow.model.publicImpact, "none");
+  assert.equal(shadow.days.flatMap((day) => day.buckets).length, 28);
+  assert.equal(
+    shadowFeatures.confirmedResetCount,
+    0,
+    "the corrected primary reset must be absent from the latest v2 features",
+  );
+  assert.ok((shadowFeatures.external?.openAiIncident ?? 0) > 0);
+  assert.equal(shadowFeatures.coverage?.external, 1);
+
+  const audit = await db.query<{
+    status: "candidate_confirmation" | "confirmed_reset" | "retracted";
+    supersedes_event_id: string | null;
+  }>(
+    `SELECT status, supersedes_event_id FROM reset_events
+     WHERE event_id IN ($1, $2)
+     ORDER BY created_at ASC`,
+    [`reset-${confirmationPostId}`, `reset-${retractionPostId}`],
+  );
+  assert.deepEqual(
+    audit.rows.map((row) => row.status),
+    ["confirmed_reset", "retracted"],
+    "confirmation and retraction must remain separate audit events",
+  );
+  assert.equal(audit.rows[1]?.supersedes_event_id, confirmedEventId);
 
   const app = buildServer({
     store: new SqliteRadarReadStore({ db, serviceVersion: "e2e", demoMode: true }),
@@ -125,12 +230,16 @@ try {
   ]);
   assert.equal(status.statusCode, 200);
   assert.equal(forecast.statusCode, 200);
+  assert.equal(forecast.json().model.version, "heuristic-v1", "v2 must remain shadow-only");
   assert.ok(Array.isArray(events.json().items));
-  assert.equal(reset.json().state, "forecasting");
+  assert.equal(reset.json().state, "retracted");
+  assert.equal(reset.json().event.supersedesEventId, confirmedEventId);
   assert.deepEqual(share.rawPayload.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   await app.close();
 
-  console.log("Demo E2E passed: collect -> dedupe/edit/delete -> extract -> forecast -> API/PNG");
+  console.log(
+    "Demo E2E passed: collect -> dedupe/edit/delete -> confirm/retract -> v1 + v2 shadow -> API/PNG",
+  );
 } finally {
   await db.close();
 }
@@ -164,6 +273,27 @@ async function pushToInbox(
      ON CONFLICT (post_id) DO UPDATE SET payload = excluded.payload`,
     [postId, JSON.stringify(payload)],
   );
+}
+
+function makeE2ePost(config: typeof target, postId: string, text: string, timestamp: string) {
+  return SourcePostObservedSchema.parse({
+    postId,
+    authorId: config.target.userId,
+    authorDisplayName: config.target.displayName,
+    authorHandle: config.target.handle,
+    authorAvatarUrl: null,
+    sourceKind: "post",
+    conversationId: postId,
+    referencedPostIds: [],
+    language: "en",
+    sourceUrl: `https://x.com/${config.target.handle}/status/${postId}`,
+    text,
+    contentHash: createHash("sha256").update(text).digest("hex"),
+    createdAt: timestamp,
+    observedAt: timestamp,
+    editedAt: null,
+    deletedAt: null,
+  });
 }
 
 function loadLocalEnv(): void {

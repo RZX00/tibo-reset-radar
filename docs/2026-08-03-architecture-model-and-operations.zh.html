@@ -147,7 +147,7 @@
             <rect class="node" x="820" y="90" width="130" height="78"/><text class="svg-title" x="885" y="121" text-anchor="middle">SQLite</text><text class="svg-note" x="885" y="143" text-anchor="middle">audit truth</text>
             <rect class="node blue" x="990" y="90" width="105" height="78"/><text class="svg-title" x="1042" y="121" text-anchor="middle">API / UI</text><text class="svg-note" x="1042" y="143" text-anchor="middle">read only</text>
             <path class="line" d="M180 129 H225"/><path class="line" d="M375 129 H420"/><path class="line" d="M570 112 L615 74"/><path class="line" d="M570 146 L615 181"/><path class="line" d="M775 69 L820 111"/><path class="line" d="M775 189 L820 147"/><path class="line" d="M950 129 H990"/>
-            <text class="svg-note" x="300" y="260" text-anchor="middle">断线立即对账；正常每 5 分钟对账</text><text class="svg-note" x="695" y="280" text-anchor="middle">stale 冻结预测，不篡改事件概率</text>
+            <text class="svg-note" x="300" y="260" text-anchor="middle">断线立即对账；正常每 120 秒对账（非实时保证）</text><text class="svg-note" x="695" y="280" text-anchor="middle">stale 冻结预测，不篡改事件概率</text>
           </svg>
         </div>
       </section>
@@ -158,7 +158,7 @@
           <tr><td class="path">apps/web</td><td>单页雷达、响应式 7 日信号带、分享与 Umami 适配</td><td>不自行计算概率；Demo 必须可见</td></tr>
           <tr><td class="path">apps/api</td><td>5 个只读端点、ETag、动态 OG PNG</td><td>统一错误体；PNG 按 runId 缓存</td></tr>
           <tr><td class="path">apps/worker</td><td>轮询/Stream 编排、提取、确认、预测落库</td><td>支持单次运行；日志不输出凭据</td></tr>
-          <tr><td class="path">packages/x-source</td><td>官方 X adapter、去重、游标、重连与 tombstone</td><td>排除 repost；删除时清空原文</td></tr>
+          <tr><td class="path">packages/x-source</td><td>官方 X adapter、去重、游标、重连与 tombstone</td><td>Filtered Stream 规则需外部预置；删除同步尚未完成</td></tr>
           <tr><td class="path">packages/signal</td><td>严格 Schema、一次重试、规则回退、确认引擎</td><td>证据区间可验证；确认不依赖模型概率</td></tr>
           <tr><td class="path">packages/forecast</td><td>状态、新鲜度、28 桶预测、回测指标</td><td>总概率不超过 0.99；固定输入可复现</td></tr>
           <tr><td class="path">db/migrations</td><td>9 张核心表与 provenance/编辑索引</td><td>迁移仅前进；回滚镜像不回滚数据库</td></tr>
@@ -184,23 +184,24 @@ age > 3h / none        -> quiet</pre></div>
       <section id="data">
         <div class="section-head"><div><span class="kicker">Data policy</span><h2>数据与秘密政策</h2></div><div class="number">05</div></div>
         <table><thead><tr><th>对象</th><th>保存</th><th>删除/更新行为</th></tr></thead><tbody>
-          <tr><td>公开帖子</td><td>ID、来源、哈希、必要展示正文、作者公开信息</td><td>删除 tombstone 保留审计行，<code>text_ephemeral</code> 置空</td></tr>
+          <tr><td>公开帖子</td><td>ID、来源、哈希、必要展示正文、作者公开信息</td><td>收到删除 tombstone 时可保留审计行并清空 <code>text_ephemeral</code>；删除同步链路尚未完成</td></tr>
           <tr><td>信号提取</td><td>Schema、prompt、method、model、input version/hash、source hash、结果</td><td>编辑后的内容哈希不同，必须重新提取</td></tr>
-          <tr><td>预测</td><td>快照与 28 桶、输入哈希、模型版本、新鲜度</td><td>可按固定输入复算；不保存秘密</td></tr>
+          <tr><td>预测</td><td>公共 V1 快照；V2 影子特征快照与 28 桶、输入哈希、成熟度</td><td>V2 不进入公共 API；可按 as-of 输入复算；不保存秘密</td></tr>
           <tr><td>运行凭据</td><td>只在忽略的环境文件或主机 secret store</td><td>禁止进入 Git、日志、错误响应和分享图</td></tr>
         </tbody></table>
       </section>
 
       <section id="model">
-        <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 模型卡与回测</h2></div><div class="number">06</div></div>
+        <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 与 survival-v2 影子模型</h2></div><div class="number">06</div></div>
         <div class="grid-2">
-          <div class="box"><h3>适用范围</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>不是个体账户到账时间承诺，不替代权威确认。</li></ul></div>
-          <div class="box"><h3>已知限制</h3><ul><li>首发权重是启发式，不声明已校准。</li><li>样本稀少时信号档位仅代表相对分布。</li><li>LLM 失败会退回规则，provenance 会记录 method。</li></ul></div>
+          <div class="box"><h3>公共 V1</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>权重是启发式，不声明已校准；不替代权威确认。</li></ul></div>
+          <div class="box"><h3>V2 影子边界</h3><ul><li>按 6 小时离散生存模型计算历史频率与作息。</li><li>只把 <code>all/unknown</code> 的有效确认作为主 Reset，撤回按更正关系排除。</li><li>少于 20 次确认标记 <code>insufficient_history</code>；外部/文本系数保持为零，未回测不得进入公共 API。</li></ul></div>
         </div>
-        <pre>DATABASE_URL=... pnpm model:backtest
+        <pre>RADAR_DB_PATH=... pnpm model:backtest
+RADAR_DB_PATH=... pnpm model:backtest:v2
 
-成熟条件: horizon_end <= now()
-outcome: confirmed_reset occurred in [horizon_start, horizon_end)
+V2 horizons: 24h / 72h / 168h（各自成熟后才计入）
+V2 outcome: 未被撤回的 primary confirmed_reset occurred in [start, end)
 metrics: sample size / Brier score / log loss / 10-bin calibration
 empty: status = no_matured_runs</pre>
       </section>
@@ -235,8 +236,8 @@ sh deploy/rollback.sh deploy/.env.production.previous</pre>
       <section id="verification">
         <div class="section-head"><div><span class="kicker">Evidence</span><h2>首发验证证据</h2></div><div class="number">09</div></div>
         <table><thead><tr><th>检查</th><th>当前结果</th><th>证据</th></tr></thead><tbody>
-          <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、Forecast、Collector、API、Web；250 组预测属性输入</td></tr>
-          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → forecast → API/PNG；含乱序回填</td></tr>
+          <tr><td>单元与属性测试</td><td><span class="status ok">PASS</span></td><td>Signal、V1/V2 Forecast、Collector、API、Web；含 250 组 V1 预测属性输入</td></tr>
+          <tr><td>集成 E2E（SQLite）</td><td><span class="status ok">PASS</span></td><td>collect → edit/delete → extract → confirm/retract → V1 + V2 shadow → API/PNG；含乱序回填</td></tr>
           <tr><td>Docker clean build</td><td><span class="status ok">PASS</span></td><td>单镜像：迁移 + API + 静态页 + 采集循环同进程</td></tr>
           <tr><td>桌面/移动视觉</td><td><span class="status ok">PASS</span></td><td>1280×720 与 390×844；7 日横向带、日选择、动态展开</td></tr>
           <tr><td>真实 X 闭环</td><td><span class="status ok">PASS</span></td><td>本地采集 → <code>POST /api/ingest/posts</code> → 入库去重 → 提取 → 新预测 → 页面；首批 20 条真实公开帖</td></tr>

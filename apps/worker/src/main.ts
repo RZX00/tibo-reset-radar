@@ -14,9 +14,12 @@ import {
 } from "@tibo-radar/x-source";
 
 import { createDemoFixtures } from "./demo-fixtures.js";
+import { OpenAIStatusSource } from "./external-events.js";
 import { InboxTimelineSource } from "./inbox-source.js";
 import { SqliteWorkerRepository } from "./repository.js";
 import { DeterministicOnlySignalAdapter, RadarWorker } from "./worker.js";
+
+export const DEFAULT_POLL_INTERVAL_MS = 120_000;
 
 export interface WorkerLoopOptions {
   db: RadarDatabase;
@@ -47,13 +50,25 @@ export async function createWorker(db: RadarDatabase): Promise<RadarWorker> {
           timeoutMs: positiveIntegerEnv("LLM_TIMEOUT_MS", 30_000),
         })
       : new DeterministicOnlySignalAdapter();
-  return new RadarWorker({ source: timeline, repository, target: config, signalAdapter });
+  const externalEventSource =
+    process.env.FORECAST_V2_OPENAI_STATUS_ENABLED === "true"
+      ? new OpenAIStatusSource({
+          timeoutMs: positiveIntegerEnv("FORECAST_V2_OPENAI_STATUS_TIMEOUT_MS", 10_000),
+        })
+      : undefined;
+  return new RadarWorker({
+    source: timeline,
+    repository,
+    target: config,
+    signalAdapter,
+    ...(externalEventSource ? { externalEventSource } : {}),
+  });
 }
 
 /** Starts the collect/extract/forecast cycle in the background and returns a handle to stop it. */
 export function startWorkerLoop(options: WorkerLoopOptions): WorkerLoopHandle {
   const controller = new AbortController();
-  const intervalMs = positiveIntegerEnv("POLL_INTERVAL_MS", 300_000);
+  const intervalMs = pollIntervalMs();
   const finished = (async () => {
     const worker = await createWorker(options.db);
     while (!controller.signal.aborted) {
@@ -106,7 +121,7 @@ export async function startWorker() {
         onError: (error) => console.error("collector stream error", safeMessage(error)),
       });
     } else {
-      const intervalMs = positiveIntegerEnv("POLL_INTERVAL_MS", 300_000);
+      const intervalMs = pollIntervalMs();
       while (!controller.signal.aborted) {
         try {
           await worker.runOnce(controller.signal);
@@ -153,8 +168,16 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name] ?? fallback);
+export function pollIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  return positiveIntegerEnv("POLL_INTERVAL_MS", DEFAULT_POLL_INTERVAL_MS, env);
+}
+
+function positiveIntegerEnv(
+  name: string,
+  fallback: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const value = Number(env[name] ?? fallback);
   if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
   return value;
 }

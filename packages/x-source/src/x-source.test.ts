@@ -4,7 +4,11 @@ import { type SourcePostObserved, SourcePostObservedSchema } from "@tibo-radar/c
 import { describe, expect, it, vi } from "vitest";
 
 import { DemoTimelineSource } from "./demo.js";
-import { reconnectDelay, runReconnectingStream } from "./reconnect.js";
+import {
+  DEFAULT_RECONCILE_INTERVAL_MS,
+  reconnectDelay,
+  runReconnectingStream,
+} from "./reconnect.js";
 import { decodeJsonLines, mapXPost, XUserTimelineSource } from "./x-api.js";
 
 describe("XUserTimelineSource", () => {
@@ -89,6 +93,10 @@ describe("DemoTimelineSource", () => {
 });
 
 describe("stream primitives", () => {
+  it("uses a 120-second reconciliation default", () => {
+    expect(DEFAULT_RECONCILE_INTERVAL_MS).toBe(120_000);
+  });
+
   it("decodes split NDJSON while ignoring keep-alive blank lines", async () => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({

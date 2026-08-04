@@ -14,8 +14,10 @@ export interface ReconnectingStreamOptions {
   onError?: (error: unknown) => void;
 }
 
+export const DEFAULT_RECONCILE_INTERVAL_MS = 120_000;
+
 export async function runReconnectingStream(options: ReconnectingStreamOptions): Promise<void> {
-  const reconcileIntervalMs = options.reconcileIntervalMs ?? 300_000;
+  const reconcileIntervalMs = options.reconcileIntervalMs ?? DEFAULT_RECONCILE_INTERVAL_MS;
   let attempt = 0;
 
   while (!options.signal.aborted) {

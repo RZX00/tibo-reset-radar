@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
@@ -36,14 +36,19 @@ const forecast = {
       hazardProbability: 0.03,
       intervalProbability: 0.025,
       cumulativeProbability: 0.1,
-      topReasonCodes: ["recent_activity"],
+      topReasonCodes: ["rules_retracted"],
     })),
   })),
   confirmedSignal: null,
   disclaimer: "预测是启发式估计，不代表事实。",
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, "share");
+  Reflect.deleteProperty(navigator, "clipboard");
+});
 
 describe("App", () => {
   it("renders the radar and expands recent activity", async () => {
@@ -100,5 +105,29 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /最近 24 小时/ }));
     await waitFor(() => expect(screen.getByText("Reset signal update")).toBeInTheDocument());
+  });
+
+  it("reports successful sharing and renders mapped reason labels", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+    expect(screen.getAllByText("Reset 撤回语义").length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("分享成功");
+    expect(share).toHaveBeenCalledOnce();
+  });
+
+  it("reports sharing failures to assistive technology", async () => {
+    const share = vi.fn().mockRejectedValue(new Error("share unavailable"));
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("分享失败，请稍后重试");
   });
 });

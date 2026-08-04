@@ -74,6 +74,7 @@ describe("radar read API", () => {
       occurredAt: null,
       scope: "all",
       evidencePostIds: ["post-1"],
+      supersedesEventId: null,
     };
     const app = buildServer({ store: new MemoryStore(makeForecast(), resetEvent) });
     servers.push(app);
