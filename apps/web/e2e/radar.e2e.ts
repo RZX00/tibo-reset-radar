@@ -62,6 +62,28 @@ test("presents every probability as a time range", async ({ page }) => {
   );
 });
 
+test("fits the narrowest phone without sideways scrolling", async ({ page }) => {
+  // The mobile project is 390px wide and passed while production overflowed at that same width,
+  // because font metrics differ between environments. 360px is the common small-Android width and
+  // leaves the margin that difference needs.
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
+
+  const overflowing = await page.evaluate(() => {
+    const viewport = document.documentElement.clientWidth;
+    return [...document.querySelectorAll("*")]
+      .filter((element) => element.getBoundingClientRect().right > viewport + 1)
+      .map((element) => `${element.tagName.toLowerCase()}.${element.className}`);
+  });
+  expect(overflowing).toEqual([]);
+
+  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
 test("shows confirmed and public error states", async ({ page }) => {
   await page.route("**/api/reset-status", async (route) => {
     await route.fulfill({
