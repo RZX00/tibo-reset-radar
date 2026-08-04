@@ -137,7 +137,7 @@ try {
   });
   await worker.processPendingSignals();
   await worker.generateForecast();
-  const confirmedContext = await repository.getForecastContext();
+  const confirmedContext = await repository.getForecastContext(new Date().toISOString());
   assert.equal(confirmedContext.confirmedSignal?.status, "confirmed_reset");
   const confirmedEventId = confirmedContext.confirmedSignal?.eventId;
   assert.ok(confirmedEventId);

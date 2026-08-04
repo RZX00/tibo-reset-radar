@@ -165,6 +165,19 @@ describe("forecast v2 shadow model", () => {
       sparse.forecast.cumulative.within24h,
     );
   });
+
+  it("does not carry text evidence across the latest effective reset", () => {
+    const resetEvents = resetHistory(20, 72, 24);
+    const beforeReset = generateShadowForecastV2(
+      makeInput({ resetEvents, signals: [futureSignal("before-reset", 30)] }),
+    );
+    const afterReset = generateShadowForecastV2(
+      makeInput({ resetEvents, signals: [futureSignal("after-reset", 12)] }),
+    );
+
+    expect(beforeReset.features.text.explicitFuture).toBe(0);
+    expect(afterReset.features.text.explicitFuture).toBeGreaterThan(0);
+  });
 });
 
 function makeInput(overrides: Partial<ForecastV2GenerationInput> = {}): ForecastV2GenerationInput {
@@ -176,7 +189,7 @@ function makeInput(overrides: Partial<ForecastV2GenerationInput> = {}): Forecast
     signals: [
       {
         postId: "signal-1",
-        observedAt: "2026-08-02T20:00:00.000Z",
+        sourceAt: "2026-08-02T20:00:00.000Z",
         extraction: SignalExtractionSchema.parse({
           explicitResetState: "none",
           futureCommitment: "none",
@@ -197,6 +210,29 @@ function makeInput(overrides: Partial<ForecastV2GenerationInput> = {}): Forecast
     targetCoverage: 1,
     externalCoverage: 1,
     ...overrides,
+  };
+}
+
+function futureSignal(
+  postId: string,
+  hoursAgo: number,
+): ForecastV2GenerationInput["signals"][number] {
+  return {
+    postId,
+    sourceAt: new Date(Date.parse(GENERATED_AT) - hoursAgo * HOUR_MS).toISOString(),
+    extraction: SignalExtractionSchema.parse({
+      explicitResetState: "future",
+      futureCommitment: "explicit",
+      timeHint: { kind: "none", startAt: null, endAt: null, rawPhrase: null },
+      scope: "unknown",
+      incidentSignal: 0,
+      milestoneSignal: 0,
+      resetRelevance: 1,
+      sentiment: "neutral",
+      confidence: 1,
+      evidenceSpans: [],
+      reasonCode: "rules_future",
+    }),
   };
 }
 

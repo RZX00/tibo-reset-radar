@@ -249,22 +249,11 @@ export class SqliteWorkerRepository {
     });
   }
 
-  async getForecastContext(): Promise<ForecastContext> {
-    const windowStart = new Date(Date.now() - FORECAST_SIGNAL_WINDOW_MS).toISOString();
-    const [signalsResult, forecastResult, eventResult, statusResult] = await Promise.all([
-      this.db.query<{
-        post_id: string;
-        observed_at: string;
-        result_json: string;
-      }>(
-        // One row per post: the newest extraction wins, which is what MAX(extracted_at) selects
-        // under SQLite's bare-column rule.
-        `SELECT se.post_id, sp.observed_at, se.result_json, MAX(se.extracted_at) AS extracted_at
-         FROM signal_extractions se JOIN source_posts sp ON sp.post_id = se.post_id
-         WHERE sp.deleted_at IS NULL AND sp.observed_at >= $1
-         GROUP BY se.post_id`,
-        [windowStart],
-      ),
+  async getForecastContext(generatedAt: string): Promise<ForecastContext> {
+    const generatedMs = Date.parse(generatedAt);
+    if (!Number.isFinite(generatedMs)) throw new Error("generatedAt must be a valid ISO date-time");
+    const windowStart = new Date(generatedMs - FORECAST_SIGNAL_WINDOW_MS).toISOString();
+    const [forecastResult, eventResult, statusResult, latestResetResult] = await Promise.all([
       this.db.query<{ summary_json: string }>(
         `SELECT summary_json FROM forecast_runs WHERE status = 'completed'
          ORDER BY generated_at DESC LIMIT 1`,
@@ -290,14 +279,57 @@ export class SqliteWorkerRepository {
            (SELECT MAX(created_at) FROM source_posts WHERE deleted_at IS NULL) AS last_public_activity_at,
            COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0) AS consecutive_failures`,
       ),
+      this.db.query<{ occurred_at: string }>(
+        `SELECT confirmed.occurred_at
+         FROM reset_events confirmed
+         WHERE confirmed.status = 'confirmed_reset'
+           AND confirmed.occurred_at IS NOT NULL
+           AND confirmed.occurred_at <= $1
+           AND confirmed.updated_at <= $1
+           AND confirmed.scope IN ('all', 'unknown')
+           AND NOT EXISTS (
+             SELECT 1 FROM reset_events correction
+             WHERE correction.status = 'retracted'
+               AND correction.supersedes_event_id = confirmed.event_id
+               AND correction.updated_at <= $1
+           )
+         ORDER BY confirmed.occurred_at DESC LIMIT 1`,
+        [generatedAt],
+      ),
     ]);
+    const latestResetAt = latestResetResult.rows[0]?.occurred_at ?? null;
+    // A late backfill must retain source chronology. Evidence resolved by the latest effective
+    // primary Reset belongs to the previous cycle and cannot predict the next one.
+    const signalsResult = await this.db.query<{
+      post_id: string;
+      source_at: string;
+      result_json: string;
+    }>(
+      `WITH latest AS (
+         SELECT post_id, MAX(extracted_at) AS extracted_at
+         FROM signal_extractions
+         WHERE extracted_at <= $3
+         GROUP BY post_id
+       )
+       SELECT se.post_id, COALESCE(sp.edited_at, sp.created_at) AS source_at, se.result_json
+       FROM latest
+       JOIN signal_extractions se
+         ON se.post_id = latest.post_id AND se.extracted_at = latest.extracted_at
+       JOIN source_posts sp ON sp.post_id = se.post_id
+       WHERE sp.deleted_at IS NULL
+         AND COALESCE(sp.edited_at, sp.created_at) >= $1
+         AND COALESCE(sp.edited_at, sp.created_at) <= $3
+         AND ($2 IS NULL OR COALESCE(sp.edited_at, sp.created_at) > $2)
+       ORDER BY source_at ASC, se.post_id ASC`,
+      [windowStart, latestResetAt, generatedAt],
+    );
     const event = eventResult.rows[0];
     const status = statusResult.rows[0];
     const evidencePostIds = event ? parseJsonColumn<string[]>(event.evidence_post_ids, []) : [];
     return {
       signals: signalsResult.rows.map((row) => ({
         postId: row.post_id,
-        observedAt: row.observed_at,
+        sourceAt: row.source_at,
         extraction: SignalExtractionSchema.parse(parseJsonColumn(row.result_json, {})),
       })),
       previousSnapshot: forecastResult.rows[0]
@@ -346,22 +378,25 @@ export class SqliteWorkerRepository {
         ),
         this.db.query<{
           post_id: string;
-          extracted_at: string;
+          source_at: string;
           result_json: string;
         }>(
           `WITH latest AS (
-             SELECT post_id, MAX(extracted_at) AS extracted_at
-             FROM signal_extractions
-             WHERE extracted_at >= $1 AND extracted_at <= $2
-             GROUP BY post_id
+             SELECT se.post_id, MAX(se.extracted_at) AS extracted_at
+             FROM signal_extractions se
+             JOIN source_posts sp ON sp.post_id = se.post_id
+             WHERE se.extracted_at <= $2
+               AND sp.deleted_at IS NULL
+               AND COALESCE(sp.edited_at, sp.created_at) >= $1
+               AND COALESCE(sp.edited_at, sp.created_at) <= $2
+             GROUP BY se.post_id
            )
-           SELECT se.post_id, se.extracted_at, se.result_json
+           SELECT se.post_id, COALESCE(sp.edited_at, sp.created_at) AS source_at, se.result_json
            FROM latest
            JOIN signal_extractions se
              ON se.post_id = latest.post_id AND se.extracted_at = latest.extracted_at
            JOIN source_posts sp ON sp.post_id = se.post_id
-           WHERE sp.deleted_at IS NULL
-           ORDER BY se.extracted_at ASC`,
+           ORDER BY source_at ASC, se.post_id ASC`,
           [signalWindowStart, generatedAt],
         ),
         this.db.query<{
@@ -450,7 +485,7 @@ export class SqliteWorkerRepository {
       })),
       signals: signalsResult.rows.map((row) => ({
         postId: row.post_id,
-        observedAt: row.extracted_at,
+        sourceAt: row.source_at,
         extraction: SignalExtractionSchema.parse(parseJsonColumn(row.result_json, {})),
       })),
       resetEvents: resetsResult.rows.map((row) => ({
