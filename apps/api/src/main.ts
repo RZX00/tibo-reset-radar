@@ -59,7 +59,10 @@ function databasePath(): string {
 }
 
 function migrationsDir(): string {
-  return process.env.RADAR_MIGRATIONS_DIR ?? path.resolve("db/migrations");
+  return (
+    process.env.RADAR_MIGRATIONS_DIR ??
+    path.resolve(fileURLToPath(new URL("../../../db/migrations", import.meta.url)))
+  );
 }
 
 function defaultSiteRoot(): string {

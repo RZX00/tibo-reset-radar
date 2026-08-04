@@ -15,13 +15,8 @@ import {
   Radio,
   RefreshCw,
   Share2,
-  Signal,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  SignalZero,
 } from "lucide-react";
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { track } from "./analytics.js";
 import { loadRadar, RadarApiError } from "./api.js";
 
@@ -29,16 +24,76 @@ type RadarData = Awaited<ReturnType<typeof loadRadar>>;
 
 const TIMEZONES = ["Asia/Shanghai", "UTC", "America/Los_Angeles", "Europe/London"];
 
-// The page forecasts one event, so the only honest vocabulary is how strong the signal is.
-const signalMeta: Record<
-  ForecastDay["signalLevel"],
-  { label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }
-> = {
-  calm: { label: "信号平静", icon: SignalZero },
-  slight: { label: "轻微信号", icon: SignalLow },
-  gathering: { label: "信号聚集", icon: SignalMedium },
-  elevated: { label: "高概率窗口", icon: SignalHigh },
-  strong: { label: "强信号窗口", icon: Signal },
+// 主结论：根据7天累计概率 + reset状态 生成一句话答案
+interface VerdictInfo {
+  level: "confirmed" | "high" | "medium" | "low" | "none";
+  headline: string;
+  sub: string;
+}
+
+function getVerdict(
+  resetState: string,
+  within168h: number,
+  within48h: number,
+  within24h: number,
+  allCalm: boolean,
+): VerdictInfo {
+  if (resetState === "confirmed_reset") {
+    return {
+      level: "confirmed",
+      headline: "Reset 已确认",
+      sub: "权威来源已宣布，账户配额即将恢复。实际到账时间因账户而异。",
+    };
+  }
+  if (resetState === "candidate_confirmation") {
+    return {
+      level: "high",
+      headline: "发现候选信号，正在核实",
+      sub: "系统检测到疑似确认信号，正在保守核对权威来源，请稍后刷新。",
+    };
+  }
+  if (within24h >= 0.3) {
+    return {
+      level: "high",
+      headline: "今天可能性较高，建议持续关注",
+      sub: `未来 24 小时累计概率 ${percent(within24h)}，信号较强，推荐今天保持关注。`,
+    };
+  }
+  if (within48h >= 0.3) {
+    return {
+      level: "high",
+      headline: "近两天可能性较高，建议留意",
+      sub: `未来 48 小时累计概率 ${percent(within48h)}，信号有所增强，建议今明两天关注。`,
+    };
+  }
+  if (within48h >= 0.15) {
+    return {
+      level: "medium",
+      headline: "近两天有一定可能性",
+      sub: `未来 48 小时累计概率 ${percent(within48h)}，存在一定信号，建议偶尔查看。`,
+    };
+  }
+  if (within168h >= 0.15) {
+    return {
+      level: "low",
+      headline: "信号较弱，本周可能性低",
+      sub: `未来 48 小时 ${percent(within48h)}，7 天累计 ${percent(within168h)}，当前无明确信号。`,
+    };
+  }
+  return {
+    level: "none",
+    headline: allCalm ? "暂无信号，无需特别关注" : "信号平静，持续监测中",
+    sub: `未来 48 小时概率 ${percent(within48h)}，依据历史基线估算，近期无异常信号。`,
+  };
+}
+
+// 信号等级元数据（只在详细区用）
+const signalMeta: Record<ForecastDay["signalLevel"], { label: string }> = {
+  calm: { label: "信号平静" },
+  slight: { label: "轻微信号" },
+  gathering: { label: "信号聚集" },
+  elevated: { label: "高概率窗口" },
+  strong: { label: "强信号窗口" },
 };
 
 const activityMeta: Record<ActivityStatus, { label: string; note: string }> = {
@@ -81,6 +136,27 @@ function reasonLabel(reason: string): string {
   return reasonLabels[reason] ?? "其他信号";
 }
 
+// 根据 topReasonCodes 生成一句自然语言信号依据
+function buildSignalSentence(
+  topReasons: [string, number][],
+  activityStatus: ActivityStatus,
+  eventCount: number,
+): string {
+  const hasSignal = topReasons.some(([r]) =>
+    ["rules_future", "rules_rolling_out_now", "rules_completed", "rules_milestone", "rules_incident", "rules_incident_and_milestone"].includes(r),
+  );
+  if (hasSignal) {
+    const labels = topReasons
+      .filter(([r]) => r !== `${activityStatus}_activity`)
+      .slice(0, 2)
+      .map(([r]) => reasonLabel(r));
+    return `检测到相关信号：${labels.join("、")}。参考了近 24 小时 ${eventCount} 条公开动态。`;
+  }
+  if (activityStatus === "active") return `Tibo 近期活跃，暂无明确 Reset 相关表述，当前依据历史周期估算。`;
+  if (activityStatus === "cooling") return `Tibo 近期活动减少，暂无 Reset 信号，当前依据历史周期估算。`;
+  return `Tibo 近期无新公开动态，当前完全依据历史基线估算，无可靠信号参考。`;
+}
+
 const skeletonKeys = ["day-1", "day-2", "day-3", "day-4", "day-5", "day-6", "day-7"];
 
 function percent(value: number): string {
@@ -98,11 +174,6 @@ function dateTime(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
-/**
- * Every probability on this page belongs to an interval, never to an instant. Rendering only
- * `startAt` made `10:07` read as a predicted reset time when it actually means `10:07–16:07`, so
- * ranges are the only honest label. The closing date repeats whenever the window crosses midnight.
- */
 function timeRange(startAt: string, endAt: string, timezone: string): string {
   const start = new Date(startAt);
   const end = new Date(endAt);
@@ -128,6 +199,10 @@ function localDay(value: Date, timezone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(value);
+}
+
+function daysSince(value: string): number {
+  return Math.floor((Date.now() - new Date(value).getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function relativeTime(value: string | null): string {
@@ -162,41 +237,6 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         <RefreshCw size={16} /> 重新连接
       </button>
     </main>
-  );
-}
-
-function DayCard({
-  day,
-  timezone,
-  selected,
-  onSelect,
-}: {
-  day: ForecastDay;
-  timezone: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const meta = signalMeta[day.signalLevel];
-  const Icon = meta.icon;
-  // The card is too narrow for a full range, so the visible label says 起 and the accessible name
-  // carries the interval the percentage actually belongs to.
-  const range = timeRange(day.startAt, day.endAt, timezone);
-  return (
-    <button
-      type="button"
-      className="day-card"
-      data-selected={selected}
-      onClick={onSelect}
-      aria-pressed={selected}
-      aria-label={`DAY ${day.dayIndex} ${range} 区间概率 ${percent(day.intervalProbability)}`}
-    >
-      <span className="day-index">DAY {day.dayIndex}</span>
-      <span className="day-window">{dateTime(day.startAt, timezone)} 起</span>
-      <Icon size={32} strokeWidth={1.6} />
-      <strong>{percent(day.intervalProbability)}</strong>
-      <span className="signal-label">{meta.label}</span>
-      <span className="cumulative">累计 {percent(day.cumulativeProbability)}</span>
-    </button>
   );
 }
 
@@ -239,6 +279,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
@@ -268,14 +309,23 @@ export function App() {
 
   const forecast: ForecastSnapshot | null = data?.forecast ?? null;
   const day = forecast?.days[selectedDay] ?? forecast?.days[0] ?? null;
+
+  const allCalm = useMemo(() => {
+    if (!forecast) return true;
+    return forecast.days.every((d) => d.signalLevel === "calm");
+  }, [forecast]);
+
   const topBucket = useMemo(() => {
     if (!forecast) return null;
-    return forecast.days
-      .flatMap((item) => item.buckets)
-      .reduce((best, item) => (item.intervalProbability > best.intervalProbability ? item : best));
+    const allBuckets = forecast.days.flatMap((item) => item.buckets);
+    if (allBuckets.length === 0) return null;
+    return allBuckets.reduce((best, item) =>
+      item.intervalProbability > best.intervalProbability ? item : best,
+    );
   }, [forecast]);
+
   const topReasons = useMemo(() => {
-    if (!forecast) return [];
+    if (!forecast) return [] as [string, number][];
     const counts = new Map<string, number>();
     for (const reason of forecast.days
       .flatMap((item) => item.buckets)
@@ -284,7 +334,7 @@ export function App() {
     }
     return [...counts.entries()]
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-      .slice(0, 4);
+      .slice(0, 4) as [string, number][];
   }, [forecast]);
 
   async function share() {
@@ -321,9 +371,22 @@ export function App() {
 
   const activity = activityMeta[data.status.activity.status];
   const resetState = data.reset.state;
+  const verdict = getVerdict(
+    resetState,
+    forecast.cumulative.within168h,
+    forecast.cumulative.within48h,
+    forecast.cumulative.within24h,
+    allCalm,
+  );
+  const signalSentence = buildSignalSentence(
+    topReasons,
+    data.status.activity.status,
+    data.events.items.length,
+  );
 
   return (
     <main id="main-content" className="radar-shell">
+      {/* ── 页头 ── */}
       <header className="masthead">
         <div>
           <span className="edition">
@@ -385,158 +448,91 @@ export function App() {
         <div className="demo-band">演示数据 · 真实 Tibo 身份与运行凭据尚未配置</div>
       ) : null}
 
-      {resetState !== "forecasting" ? (
-        <section className="confirmation-band" data-state={resetState} aria-live="polite">
-          {resetState === "confirmed_reset" ? (
-            <CheckCircle2 size={22} />
+      {/* ── 区域一：主结论 ── */}
+      <section
+        className="verdict-hero"
+        data-level={verdict.level}
+        aria-label="当前 Reset 可能性评估"
+        aria-live="polite"
+      >
+        <div className="verdict-icon">
+          {verdict.level === "confirmed" ? (
+            <CheckCircle2 size={36} />
+          ) : verdict.level === "high" || verdict.level === "medium" ? (
+            <AlertTriangle size={36} />
           ) : (
-            <AlertTriangle size={22} />
+            <Activity size={36} />
           )}
-          <strong>
-            {resetState === "confirmed_reset"
-              ? "Reset 已确认"
-              : resetState === "candidate_confirmation"
-                ? "发现待确认信号"
-                : "确认信号已撤回"}
-          </strong>
-          <span>
-            {resetState === "confirmed_reset"
-              ? "权威公开证据已经出现；实际账户到达时间可能不同。"
-              : resetState === "candidate_confirmation"
-                ? "系统正在保守核对权威来源与已发生语义。"
-                : "此前确认不再有效，预测恢复为启发式状态。"}
-          </span>
-        </section>
-      ) : null}
-
-      <section className="now-band">
-        <div className="activity-reading" data-status={data.status.activity.status}>
-          <Activity size={19} />
-          <div>
-            <span>公开活动</span>
-            <strong>{activity.label}</strong>
-          </div>
-          <p>
-            {activity.note} · {relativeTime(data.status.activity.lastPublicActivityAt)}
-          </p>
         </div>
-        <div className="headline-reading">
-          <span>未来 48 小时</span>
-          <strong>{percent(forecast.cumulative.within48h)}</strong>
-          <p>7 天累计 {percent(forecast.cumulative.within168h)}</p>
-        </div>
-        <div className="freshness-reading">
-          <span className="status-dot" data-status={forecast.dataFreshness.status} />
-          <div>
-            <span>
-              数据
-              {forecast.dataFreshness.status === "fresh"
-                ? "正常"
-                : forecast.dataFreshness.status === "delayed"
-                  ? "延迟"
-                  : "陈旧"}
-            </span>
-            <strong>{relativeTime(forecast.dataFreshness.lastObservedAt)}</strong>
-          </div>
-          <p>模型 {forecast.model.version}</p>
-        </div>
-      </section>
-
-      <section className="cumulative-band" aria-label="累计概率">
-        {(
-          [
-            ["24 小时", forecast.cumulative.within24h],
-            ["48 小时", forecast.cumulative.within48h],
-            ["72 小时", forecast.cumulative.within72h],
-            ["168 小时", forecast.cumulative.within168h],
-          ] as const
-        ).map(([label, probability]) => (
-          <div key={label}>
-            <span>{label}</span>
-            <strong>{percent(probability)}</strong>
-          </div>
-        ))}
-      </section>
-
-      <section className="forecast-section" aria-labelledby="forecast-heading">
-        <div className="section-heading">
-          <div>
-            <span>7 DAY SIGNAL STRIP</span>
-            <h2 id="forecast-heading">未来窗口</h2>
-          </div>
-          {topBucket ? (
-            <p>
-              峰值时段 {timeRange(topBucket.startAt, topBucket.endAt, timezone)} ·{" "}
-              {percent(topBucket.intervalProbability)}
+        <div className="verdict-body">
+          <p className="verdict-headline">{verdict.headline}</p>
+          <p className="verdict-sub">{verdict.sub}</p>
+          {topBucket && topBucket.intervalProbability >= 0.01 ? (
+            <p className="verdict-peak">
+              预期时段：{timeRange(topBucket.startAt, topBucket.endAt, timezone)}
+              {" "}·{" "}
+              该窗口概率 {percent(topBucket.intervalProbability)}
             </p>
           ) : null}
         </div>
-        <div className="forecast-strip">
-          {forecast.days.map((item, index) => (
-            <DayCard
-              key={item.dayIndex}
-              day={item}
-              timezone={timezone}
-              selected={index === selectedDay}
-              onSelect={() => setSelectedDay(index)}
-            />
-          ))}
+        <div className="verdict-number" aria-label={`未来48小时概率 ${percent(forecast.cumulative.within48h)}`}>
+          <span>未来 48 小时</span>
+          <strong>{percent(forecast.cumulative.within48h)}</strong>
+          <small>7 天 {percent(forecast.cumulative.within168h)}</small>
         </div>
       </section>
 
-      <section className="detail-section">
-        <div className="detail-heading">
-          <div>
-            <span>DAY {day.dayIndex} · 6H WINDOWS</span>
-            <h2>{timeRange(day.startAt, day.endAt, timezone)}</h2>
-          </div>
-          <p>{signalMeta[day.signalLevel].label} · 每格是该 6 小时区间内发生的概率</p>
+      {/* ── 区域二：背景参考 ── */}
+      <section className="context-bar" aria-label="背景参考信息">
+        <div className="context-item">
+          <span>上次 Reset</span>
+          {data.reset.event?.occurredAt ? (
+            <>
+              <strong>{daysSince(data.reset.event.occurredAt)} 天前</strong>
+              <p>{dateTime(data.reset.event.occurredAt, timezone)}</p>
+            </>
+          ) : (
+            <>
+              <strong>暂无记录</strong>
+              <p>尚无已确认的 Reset 历史</p>
+            </>
+          )}
         </div>
-        <div className="bucket-grid">
-          {day.buckets.map((bucket) => (
-            <div className="bucket" key={bucket.index}>
-              <span>{timeRange(bucket.startAt, bucket.endAt, timezone)}</span>
-              <strong>{percent(bucket.intervalProbability)}</strong>
-              <div
-                className="probability-track"
-                role="progressbar"
-                aria-label={`${timeRange(bucket.startAt, bucket.endAt, timezone)} 区间概率`}
-                aria-valuemin={0}
-                aria-valuemax={99}
-                aria-valuenow={Math.round(bucket.intervalProbability * 100)}
-              >
-                <span style={{ transform: `scaleX(${bucket.intervalProbability})` }} />
-              </div>
-              <p>{bucket.topReasonCodes.slice(0, 2).map(reasonLabel).join(" · ") || "历史基线"}</p>
-            </div>
-          ))}
+        <div className="context-item">
+          <span>Tibo 公开活动</span>
+          <strong data-status={data.status.activity.status}>{activity.label}</strong>
+          <p>{activity.note} · {relativeTime(data.status.activity.lastPublicActivityAt)}</p>
         </div>
-      </section>
-
-      <section className="signals-section" aria-labelledby="signals-heading">
-        <div>
-          <span>主要信号</span>
-          <h2 id="signals-heading">本轮预测依据</h2>
+        <div className="context-item">
+          <span>未来 48 小时</span>
+          <strong>{percent(forecast.cumulative.within48h)}</strong>
+          <p>72 小时 {percent(forecast.cumulative.within72h)}</p>
         </div>
-        <div className="signal-list">
-          {topReasons.map(([reason, count]) => (
-            <div key={reason}>
-              <strong>{reasonLabel(reason)}</strong>
-              <span>{count} 个时段</span>
-            </div>
-          ))}
+        <div className="context-item">
+          <span>数据状态</span>
+          <strong>
+            <span className="status-dot" data-status={forecast.dataFreshness.status} />
+            {forecast.dataFreshness.status === "fresh"
+              ? "正常"
+              : forecast.dataFreshness.status === "delayed"
+                ? "延迟"
+                : "陈旧"}
+          </strong>
+          <p>更新于 {relativeTime(forecast.dataFreshness.lastObservedAt)}</p>
         </div>
       </section>
 
-      <section className="events-section">
+      {/* ── 区域三：信号依据 ── */}
+      <section className="signal-summary" aria-label="预测依据">
+        <p className="signal-sentence">{signalSentence}</p>
         <button
           className="events-toggle"
           type="button"
-          onClick={() => setEventsOpen((value) => !value)}
+          onClick={() => setEventsOpen((v) => !v)}
           aria-expanded={eventsOpen}
         >
           <span>
-            <strong>最近 24 小时</strong>
+            <strong>查看近 24 小时原始推文</strong>
             <small>{data.events.items.length} 条公开动态</small>
           </span>
           <ChevronDown size={18} data-open={eventsOpen} />
@@ -554,6 +550,122 @@ export function App() {
             </div>
           ) : null}
         </div>
+      </section>
+
+      {/* ── 区域四：详细预测数据（折叠） ── */}
+      <section className="detail-collapse-section">
+        <button
+          className="detail-toggle"
+          type="button"
+          onClick={() => setDetailOpen((v) => !v)}
+          aria-expanded={detailOpen}
+        >
+          <span>查看 7 天详细预测数据</span>
+          <ChevronDown size={18} data-open={detailOpen} />
+        </button>
+
+        {detailOpen ? (
+          <div className="detail-inner">
+            {/* 7天卡片 */}
+            <div className="forecast-section" aria-labelledby="forecast-heading">
+              <div className="section-heading">
+                <div>
+                  <span>7 DAY SIGNAL STRIP</span>
+                  <h2 id="forecast-heading">未来窗口</h2>
+                </div>
+              </div>
+              <div className="forecast-strip">
+                {forecast.days.map((item, index) => {
+                  const meta = signalMeta[item.signalLevel];
+                  const range = timeRange(item.startAt, item.endAt, timezone);
+                  return (
+                    <button
+                      key={item.dayIndex}
+                      type="button"
+                      className="day-card"
+                      data-selected={index === selectedDay}
+                      onClick={() => setSelectedDay(index)}
+                      aria-pressed={index === selectedDay}
+                      aria-label={`DAY ${item.dayIndex} ${range} 区间概率 ${percent(item.intervalProbability)}`}
+                    >
+                      <span className="day-index">DAY {item.dayIndex}</span>
+                      <span className="day-window">{dateTime(item.startAt, timezone)} 起</span>
+                      <div className="day-bar">
+                        <span style={{ width: `${Math.round(item.intervalProbability * 100)}%` }} />
+                      </div>
+                      <strong>{percent(item.intervalProbability)}</strong>
+                      <span className="signal-label">{meta.label}</span>
+                      <span className="cumulative">累计 {percent(item.cumulativeProbability)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 6小时桶 */}
+            <div className="detail-section">
+              <div className="detail-heading">
+                <div>
+                  <span>DAY {day.dayIndex} · 6H WINDOWS</span>
+                  <h2>{timeRange(day.startAt, day.endAt, timezone)}</h2>
+                </div>
+                <p>{signalMeta[day.signalLevel].label} · 每格是该 6 小时区间内发生的概率</p>
+              </div>
+              <div className="bucket-grid">
+                {day.buckets.map((bucket) => (
+                  <div className="bucket" key={bucket.index}>
+                    <span>{timeRange(bucket.startAt, bucket.endAt, timezone)}</span>
+                    <strong>{percent(bucket.intervalProbability)}</strong>
+                    <div
+                      className="probability-track"
+                      role="progressbar"
+                      aria-label={`${timeRange(bucket.startAt, bucket.endAt, timezone)} 区间概率`}
+                      aria-valuemin={0}
+                      aria-valuemax={99}
+                      aria-valuenow={Math.round(bucket.intervalProbability * 100)}
+                    >
+                      <span style={{ transform: `scaleX(${bucket.intervalProbability})` }} />
+                    </div>
+                    <p>{bucket.topReasonCodes.slice(0, 2).map(reasonLabel).join(" · ") || "历史基线"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 累计概率 */}
+            <section className="cumulative-band" aria-label="累计概率">
+              {(
+                [
+                  ["24 小时", forecast.cumulative.within24h],
+                  ["48 小时", forecast.cumulative.within48h],
+                  ["72 小时", forecast.cumulative.within72h],
+                  ["168 小时", forecast.cumulative.within168h],
+                ] as const
+              ).map(([label, probability]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{percent(probability)}</strong>
+                </div>
+              ))}
+            </section>
+
+            {/* 信号列表 */}
+            <section className="signals-section" aria-labelledby="signals-heading">
+              <div>
+                <span>主要信号</span>
+                <h2 id="signals-heading">本轮预测依据</h2>
+              </div>
+              <div className="signal-list">
+                {topReasons.map(([reason, count]) => (
+                  <div key={reason}>
+                    <strong>{reasonLabel(reason)}</strong>
+                    <span>{count} 个时段</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        ) : null}
       </section>
 
       <footer className="footer-line">
