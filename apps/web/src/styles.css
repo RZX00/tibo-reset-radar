@@ -13,6 +13,22 @@
   --rain: oklch(57% 0.12 239);
   --alert: oklch(58% 0.19 30);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* verdict 颜色 */
+  --verdict-confirmed-bg: oklch(93% 0.07 151);
+  --verdict-confirmed-border: oklch(55% 0.13 151);
+  --verdict-confirmed-text: oklch(28% 0.1 151);
+  --verdict-high-bg: oklch(95% 0.07 30);
+  --verdict-high-border: oklch(58% 0.19 30);
+  --verdict-high-text: oklch(33% 0.13 28);
+  --verdict-medium-bg: oklch(96% 0.07 75);
+  --verdict-medium-border: oklch(68% 0.15 75);
+  --verdict-medium-text: oklch(38% 0.1 65);
+  --verdict-low-bg: oklch(96% 0.012 150);
+  --verdict-low-border: oklch(72% 0.04 150);
+  --verdict-low-text: oklch(38% 0.018 156);
+  --verdict-none-bg: oklch(96% 0.008 150);
+  --verdict-none-border: var(--line);
+  --verdict-none-text: var(--muted);
 }
 
 * {
@@ -190,76 +206,209 @@ h2 {
   border-color: var(--muted);
   color: var(--muted);
 }
-.now-band {
+
+/* ── 区域一：主结论 ── */
+.verdict-hero {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 28px 24px;
+  margin: 24px 0 0;
+  border-radius: 8px;
+  border: 1.5px solid var(--verdict-none-border);
+  background: var(--verdict-none-bg);
+  color: var(--verdict-none-text);
+  transition:
+    background 300ms var(--ease-out),
+    border-color 300ms var(--ease-out);
+}
+.verdict-hero[data-level="confirmed"] {
+  border-color: var(--verdict-confirmed-border);
+  background: var(--verdict-confirmed-bg);
+  color: var(--verdict-confirmed-text);
+}
+.verdict-hero[data-level="high"] {
+  border-color: var(--verdict-high-border);
+  background: var(--verdict-high-bg);
+  color: var(--verdict-high-text);
+}
+.verdict-hero[data-level="medium"] {
+  border-color: var(--verdict-medium-border);
+  background: var(--verdict-medium-bg);
+  color: var(--verdict-medium-text);
+}
+.verdict-hero[data-level="low"],
+.verdict-hero[data-level="none"] {
+  border-color: var(--verdict-low-border);
+  background: var(--verdict-low-bg);
+  color: var(--verdict-low-text);
+}
+.verdict-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.verdict-body {
+  flex: 1;
+  min-width: 0;
+}
+.verdict-headline {
+  font-size: 1.3rem;
+  font-weight: 720;
+  line-height: 1.2;
+}
+.verdict-sub {
+  margin-top: 6px;
+  font-size: 0.88rem;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+.verdict-peak {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  font-weight: 680;
+  opacity: 0.9;
+}
+.verdict-number {
+  flex-shrink: 0;
+  text-align: right;
+}
+.verdict-number span {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 680;
+  opacity: 0.7;
+}
+.verdict-number strong {
+  display: block;
+  font-family: "Newsreader Variable", Georgia, serif;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  font-weight: 520;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+.verdict-number small {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.76rem;
+  opacity: 0.65;
+}
+
+/* ── 区域二：背景参考 ── */
+.context-bar {
   display: grid;
-  grid-template-columns: 1fr 1.15fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 16px;
+  border-top: 2px solid var(--ink);
   border-bottom: 1px solid var(--ink);
 }
-.now-band > div {
-  min-height: 136px;
-  padding: 24px 0;
+.context-item {
+  min-height: 110px;
+  padding: 20px 0;
 }
-.now-band > div + div {
-  padding-left: 28px;
+.context-item + .context-item {
+  padding-left: 24px;
   border-left: 1px solid var(--line);
 }
-.activity-reading,
-.freshness-reading {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-content: center;
-  column-gap: 12px;
-}
-.activity-reading > p,
-.freshness-reading > p {
-  grid-column: 2;
-}
-.activity-reading svg {
-  margin-top: 4px;
-  color: var(--radar);
-}
-.activity-reading span,
-.headline-reading span,
-.freshness-reading span {
+.context-item > span {
+  display: block;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 680;
+  margin-bottom: 6px;
 }
-.activity-reading strong,
-.freshness-reading strong {
-  display: block;
-  font-size: 1.35rem;
-}
-.activity-reading p,
-.headline-reading p,
-.freshness-reading p {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.headline-reading {
+.context-item > strong {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  align-content: center;
-  gap: 0 14px;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.3rem;
+  line-height: 1.1;
 }
-.headline-reading strong {
-  font-family: "Newsreader Variable", Georgia, serif;
-  font-size: clamp(3.2rem, 6vw, 5.8rem);
-  font-weight: 520;
-  line-height: 0.75;
-  font-variant-numeric: tabular-nums;
+.context-item > strong[data-status="active"] {
+  color: var(--radar);
 }
-.headline-reading p {
-  flex-basis: 100%;
+.context-item > strong[data-status="cooling"] {
+  color: oklch(55% 0.1 75);
 }
+.context-item > strong[data-status="quiet"],
+.context-item > strong[data-status="data_delayed"] {
+  color: var(--muted);
+}
+.context-item > p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+/* ── 区域三：信号依据 ── */
+.signal-summary {
+  padding: 20px 0 0;
+  border-bottom: 1px solid var(--ink);
+}
+.signal-sentence {
+  padding: 0 0 16px;
+  font-size: 0.92rem;
+  color: var(--ink);
+  line-height: 1.6;
+  max-width: 80ch;
+}
+
+/* ── 区域四：详细数据折叠 ── */
+.detail-collapse-section {
+  border-bottom: 1px solid var(--ink);
+}
+.detail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 64px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 680;
+  cursor: pointer;
+  text-align: left;
+}
+.detail-toggle:hover {
+  color: var(--ink);
+}
+.detail-toggle svg {
+  transition: transform 220ms var(--ease-out);
+}
+.detail-toggle svg[data-open="true"] {
+  transform: rotate(180deg);
+}
+.detail-inner {
+  padding-bottom: 20px;
+}
+
+/* day-bar（替代原来的信号图标） */
+.day-bar {
+  width: 100%;
+  height: 4px;
+  margin: 14px 0 10px;
+  background: oklch(88% 0.015 150);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.day-bar span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: var(--rain);
+  border-radius: 2px;
+}
+
 .status-dot {
-  width: 10px;
-  height: 10px;
-  margin-top: 7px;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--radar);
+  flex-shrink: 0;
 }
 .status-dot[data-status="delayed"],
 .status-dot[data-status="stale"] {
@@ -662,21 +811,31 @@ h2 {
   .timezone-control {
     grid-column: 1 / -1;
   }
-  .now-band {
+  .verdict-hero {
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 20px 16px;
+  }
+  .verdict-number {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .verdict-number span {
+    display: inline;
+  }
+  .context-bar {
     grid-template-columns: 1fr 1fr;
   }
-  .now-band > div {
-    min-height: 118px;
-    padding: 18px 0;
-  }
-  .now-band > div + div {
-    padding-left: 16px;
-  }
-  .now-band > .freshness-reading {
-    grid-column: 1 / -1;
+  .context-item:nth-child(3) {
     padding-left: 0;
     border-top: 1px solid var(--line);
     border-left: 0;
+  }
+  .context-item:nth-child(4) {
+    border-top: 1px solid var(--line);
   }
   .cumulative-band {
     grid-template-columns: 1fr 1fr;
@@ -739,16 +898,17 @@ h2 {
   .masthead-actions {
     width: 100%;
   }
-  .now-band {
+  .context-bar {
     grid-template-columns: 1fr;
   }
-  .now-band > div + div {
+  .context-item + .context-item {
     padding-left: 0;
     border-top: 1px solid var(--line);
     border-left: 0;
   }
-  .now-band > .freshness-reading {
-    grid-column: auto;
+  .context-item:nth-child(3),
+  .context-item:nth-child(4) {
+    border-top: 1px solid var(--line);
   }
   .forecast-strip {
     grid-template-columns: repeat(7, 66vw);
