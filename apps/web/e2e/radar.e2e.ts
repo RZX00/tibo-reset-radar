@@ -19,9 +19,10 @@ test("renders a stable radar and supports the primary interactions", async ({ pa
     true,
   );
 
+  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
   await page.getByRole("button", { name: /DAY 4/ }).click();
   await expect(page.getByText("DAY 4 · 6H WINDOWS")).toBeVisible();
-  await page.getByRole("button", { name: /最近 24 小时/ }).click();
+  await page.getByRole("button", { name: /近 24 小时原始推文/ }).click();
   await expect(page.getByText("Reset timing update soon.")).toBeVisible();
 
   if (test.info().project.name === "mobile-chromium") {
@@ -39,7 +40,9 @@ test("presents every probability as a time range", async ({ page }) => {
   await page.getByLabel("时区").selectOption("UTC");
 
   // A percentage belongs to an interval; a bare start time reads as a predicted reset moment.
-  await expect(page.getByText("峰值时段", { exact: false })).toContainText(/\d{2}:\d{2}–/);
+  await expect(page.getByText("预期时段", { exact: false })).toContainText(/\d{2}:\d{2}–/);
+  // The six-hour cards live behind the detail toggle.
+  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
   await expect(page.getByText("8月3日 08:00–14:00").first()).toBeVisible();
   // Crossing midnight has to stay readable in both directions.
   await expect(page.getByText("8月3日 20:00–8月4日 02:00")).toBeVisible();

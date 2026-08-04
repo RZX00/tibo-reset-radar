@@ -143,7 +143,14 @@ function buildSignalSentence(
   eventCount: number,
 ): string {
   const hasSignal = topReasons.some(([r]) =>
-    ["rules_future", "rules_rolling_out_now", "rules_completed", "rules_milestone", "rules_incident", "rules_incident_and_milestone"].includes(r),
+    [
+      "rules_future",
+      "rules_rolling_out_now",
+      "rules_completed",
+      "rules_milestone",
+      "rules_incident",
+      "rules_incident_and_milestone",
+    ].includes(r),
   );
   if (hasSignal) {
     const labels = topReasons
@@ -152,8 +159,10 @@ function buildSignalSentence(
       .map(([r]) => reasonLabel(r));
     return `检测到相关信号：${labels.join("、")}。参考了近 24 小时 ${eventCount} 条公开动态。`;
   }
-  if (activityStatus === "active") return `Tibo 近期活跃，暂无明确 Reset 相关表述，当前依据历史周期估算。`;
-  if (activityStatus === "cooling") return `Tibo 近期活动减少，暂无 Reset 信号，当前依据历史周期估算。`;
+  if (activityStatus === "active")
+    return `Tibo 近期活跃，暂无明确 Reset 相关表述，当前依据历史周期估算。`;
+  if (activityStatus === "cooling")
+    return `Tibo 近期活动减少，暂无 Reset 信号，当前依据历史周期估算。`;
   return `Tibo 近期无新公开动态，当前完全依据历史基线估算，无可靠信号参考。`;
 }
 
@@ -469,17 +478,20 @@ export function App() {
           <p className="verdict-sub">{verdict.sub}</p>
           {topBucket && topBucket.intervalProbability >= 0.01 ? (
             <p className="verdict-peak">
-              预期时段：{timeRange(topBucket.startAt, topBucket.endAt, timezone)}
-              {" "}·{" "}
-              该窗口概率 {percent(topBucket.intervalProbability)}
+              预期时段：{timeRange(topBucket.startAt, topBucket.endAt, timezone)} · 该窗口概率{" "}
+              {percent(topBucket.intervalProbability)}
             </p>
           ) : null}
         </div>
-        <div className="verdict-number" aria-label={`未来48小时概率 ${percent(forecast.cumulative.within48h)}`}>
+        {/* A plain div cannot carry an accessible name, and the number is a figure, not a widget. */}
+        <figure
+          className="verdict-number"
+          aria-label={`未来 48 小时概率 ${percent(forecast.cumulative.within48h)}`}
+        >
           <span>未来 48 小时</span>
           <strong>{percent(forecast.cumulative.within48h)}</strong>
           <small>7 天 {percent(forecast.cumulative.within168h)}</small>
-        </div>
+        </figure>
       </section>
 
       {/* ── 区域二：背景参考 ── */}
@@ -501,7 +513,9 @@ export function App() {
         <div className="context-item">
           <span>Tibo 公开活动</span>
           <strong data-status={data.status.activity.status}>{activity.label}</strong>
-          <p>{activity.note} · {relativeTime(data.status.activity.lastPublicActivityAt)}</p>
+          <p>
+            {activity.note} · {relativeTime(data.status.activity.lastPublicActivityAt)}
+          </p>
         </div>
         <div className="context-item">
           <span>未来 48 小时</span>
@@ -567,7 +581,7 @@ export function App() {
         {detailOpen ? (
           <div className="detail-inner">
             {/* 7天卡片 */}
-            <div className="forecast-section" aria-labelledby="forecast-heading">
+            <section className="forecast-section" aria-labelledby="forecast-heading">
               <div className="section-heading">
                 <div>
                   <span>7 DAY SIGNAL STRIP</span>
@@ -600,7 +614,7 @@ export function App() {
                   );
                 })}
               </div>
-            </div>
+            </section>
 
             {/* 6小时桶 */}
             <div className="detail-section">
@@ -626,7 +640,9 @@ export function App() {
                     >
                       <span style={{ transform: `scaleX(${bucket.intervalProbability})` }} />
                     </div>
-                    <p>{bucket.topReasonCodes.slice(0, 2).map(reasonLabel).join(" · ") || "历史基线"}</p>
+                    <p>
+                      {bucket.topReasonCodes.slice(0, 2).map(reasonLabel).join(" · ") || "历史基线"}
+                    </p>
                   </div>
                 ))}
               </div>

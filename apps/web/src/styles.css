@@ -218,7 +218,9 @@ h2 {
   border: 1.5px solid var(--verdict-none-border);
   background: var(--verdict-none-bg);
   color: var(--verdict-none-text);
-  transition: background 300ms var(--ease-out), border-color 300ms var(--ease-out);
+  transition:
+    background 300ms var(--ease-out),
+    border-color 300ms var(--ease-out);
 }
 .verdict-hero[data-level="confirmed"] {
   border-color: var(--verdict-confirmed-border);
@@ -321,10 +323,16 @@ h2 {
   font-size: 1.3rem;
   line-height: 1.1;
 }
-.context-item > strong[data-status="active"] { color: var(--radar); }
-.context-item > strong[data-status="cooling"] { color: oklch(55% 0.1 75); }
+.context-item > strong[data-status="active"] {
+  color: var(--radar);
+}
+.context-item > strong[data-status="cooling"] {
+  color: oklch(55% 0.1 75);
+}
 .context-item > strong[data-status="quiet"],
-.context-item > strong[data-status="data_delayed"] { color: var(--muted); }
+.context-item > strong[data-status="data_delayed"] {
+  color: var(--muted);
+}
 .context-item > p {
   margin-top: 6px;
   color: var(--muted);
@@ -364,7 +372,9 @@ h2 {
   cursor: pointer;
   text-align: left;
 }
-.detail-toggle:hover { color: var(--ink); }
+.detail-toggle:hover {
+  color: var(--ink);
+}
 .detail-toggle svg {
   transition: transform 220ms var(--ease-out);
 }
@@ -813,7 +823,9 @@ h2 {
     align-items: baseline;
     gap: 10px;
   }
-  .verdict-number span { display: inline; }
+  .verdict-number span {
+    display: inline;
+  }
   .context-bar {
     grid-template-columns: 1fr 1fr;
   }
