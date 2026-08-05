@@ -1266,3 +1266,30 @@ h2 {
     transition: none;
   }
 }
+
+/* ── brand ── */
+.footer-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* The ewo API lockup is vector, so it stays crisp anywhere; the page is paper-light, so the
+   light-mode file is the correct one and needs no recolouring. */
+.ewo-logo {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+.ewo-logo img {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+.ewo-logo:hover img,
+.ewo-logo:focus-visible img {
+  opacity: 0.72;
+}
+.lang-control select {
+  min-width: 84px;
+}

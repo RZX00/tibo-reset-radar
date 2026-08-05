@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
+  // The browser reports an English locale; the assertions below read the Chinese page.
+  await page.addInitScript(() => window.localStorage.setItem("radar-lang", "zh"));
   await page.route("https://pbs.twimg.com/profile_images/**", async (route) => {
     await route.fulfill({
       contentType: "image/png",
@@ -86,6 +88,22 @@ test("fits the narrowest phone without sideways scrolling", async ({ page }) => 
   });
   expect(overflowing).toEqual([]);
 
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
+test("serves an English page and remembers the choice", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.removeItem("radar-lang"));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
+  // An English browser must not land on a Chinese page.
+  await expect(page.getByRole("heading", { name: "Next 7 days" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe("en");
+
+  await page.getByLabel("Language").selectOption("zh");
+  await expect(page.getByRole("heading", { name: "未来 7 天" })).toBeVisible();
+  expect(await page.evaluate(() => window.localStorage.getItem("radar-lang"))).toBe("zh");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

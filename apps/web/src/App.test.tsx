@@ -3,8 +3,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, getActivityPresentation, getRoutinePresentation } from "./App.js";
+import { dictionaries } from "./i18n.js";
 
 const forecast = {
   schemaVersion: "1.0",
@@ -43,8 +44,14 @@ const forecast = {
   disclaimer: "预测是启发式估计，不代表事实。",
 };
 
+beforeEach(() => {
+  // jsdom reports an English browser, so pin the language the way the timezone is pinned.
+  window.localStorage.setItem("radar-lang", "zh");
+});
+
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   Reflect.deleteProperty(navigator, "share");
   Reflect.deleteProperty(navigator, "clipboard");
@@ -221,5 +228,39 @@ describe("App", () => {
         }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("renders English for an English browser and switches back on demand", async () => {
+    window.localStorage.removeItem("radar-lang");
+    render(<App />);
+
+    // No stored choice: an English browser gets the English page, numbers unchanged.
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+    expect(screen.getAllByText(dictionaries.en.headline.within24h).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: dictionaries.en.weather.heading }),
+    ).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("en");
+
+    await userEvent.selectOptions(screen.getByLabelText(dictionaries.en.langLabel), "zh");
+    await waitFor(() =>
+      expect(screen.getAllByText(dictionaries.zh.headline.within24h).length).toBeGreaterThan(0),
+    );
+    expect(document.documentElement.lang).toBe("zh-CN");
+    // The choice survives a reload.
+    expect(window.localStorage.getItem("radar-lang")).toBe("zh");
+  });
+
+  it("puts the ewo logo in the footer, pointing at the API site", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+
+    const brand = screen.getByRole("link", { name: dictionaries.zh.footer.brandLink });
+    expect(brand).toHaveAttribute("href", "https://api.ewo.so");
+    expect(brand.querySelector("img")).toHaveAttribute("src", "/brand/ewo-api-lockup.svg");
+    expect(brand.querySelector("img")).toHaveAttribute("alt", "ewo API");
+    // The credit is one sentence around the logo, not a bare mark.
+    expect(brand.parentElement).toHaveTextContent("本项目由");
+    expect(brand.parentElement).toHaveTextContent("提供支持");
   });
 });
