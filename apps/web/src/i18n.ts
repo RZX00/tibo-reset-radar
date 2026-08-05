@@ -48,7 +48,6 @@ export interface Strings {
     "active" | "cooling" | "quiet" | "data_delayed",
     { label: string; note: string }
   >;
-  sleep: { label: string; note: (sampleSize: number) => string; noteFallback: string };
   headline: {
     aria: string;
     within24h: string;
@@ -264,11 +263,6 @@ const zh: Strings = {
     quiet: { label: "安静", note: "近期没有新公开动态" },
     data_delayed: { label: "数据延迟", note: "采集暂时无法确认" },
   },
-  sleep: {
-    label: "可能在睡觉",
-    note: (sampleSize) => `按近 30 天 ${sampleSize} 条公开动态推测，当前处于低活跃时段`,
-    noteFallback: "按历史公开活动时段推测，当前可能正在休息",
-  },
   headline: {
     aria: "核心预测概率",
     within24h: "未来 24 小时",
@@ -409,12 +403,6 @@ const en: Strings = {
     cooling: { label: "Cooling", note: "Public activity is slowing down" },
     quiet: { label: "Quiet", note: "No recent public activity" },
     data_delayed: { label: "Data delayed", note: "Collection cannot confirm right now" },
-  },
-  sleep: {
-    label: "Likely asleep",
-    note: (sampleSize) =>
-      `Inferred from ${sampleSize} public posts over 30 days; this is his quietest window`,
-    noteFallback: "Inferred from past posting hours; this is usually a quiet window",
   },
   headline: {
     aria: "Headline probabilities",

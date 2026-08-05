@@ -32,7 +32,7 @@ describe("forecast reads", () => {
   });
 });
 
-describe("sleep inference", () => {
+describe("routine and sleep analytics", () => {
   it("finds the quietest eight-hour UTC window once enough posts exist", () => {
     const hourlyCounts = Array.from({ length: 24 }, () => 2);
     for (let hour = 6; hour < 14; hour += 1) hourlyCounts[hour] = 0;
@@ -52,7 +52,7 @@ describe("sleep inference", () => {
     expect(inferSleepWindowUtc(hourlyCounts)).toBeNull();
   });
 
-  it("exposes a sleep inference only when a quiet account is inside that window", async () => {
+  it("keeps the observed quiet window alongside the shared scheduled routine", async () => {
     const db = new RadarDatabase({ file: ":memory:" });
     await migrate(db, "db/migrations");
     const now = new Date("2026-08-05T08:00:00.000Z");
@@ -93,8 +93,59 @@ describe("sleep inference", () => {
         collector: { status: "fresh" },
         activity: {
           status: "quiet",
+          routinePhase: "sleeping",
           likelySleeping: true,
           sleepWindowUtc: { startHour: 6, endHour: 14, sampleSize: 32 },
+        },
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("uses the shared schedule even after the observed quiet window ends", async () => {
+    const db = new RadarDatabase({ file: ":memory:" });
+    await migrate(db, "db/migrations");
+    const now = new Date("2026-08-05T14:30:00.000Z");
+    await db.query(
+      `INSERT INTO collector_cursors (
+         source, cursor, consecutive_failures, last_success_at, updated_at
+       ) VALUES ('test', NULL, 0, $1, $1)`,
+      [now.toISOString()],
+    );
+    let postIndex = 0;
+    for (let hour = 0; hour < 24; hour += 1) {
+      if (hour >= 6 && hour < 14) continue;
+      for (let copy = 0; copy < 2; copy += 1) {
+        postIndex += 1;
+        const createdAt = new Date(Date.UTC(2026, 7, 3, hour, copy)).toISOString();
+        await db.query(
+          `INSERT INTO source_posts (
+             post_id, author_id, source_kind, source_url, content_hash, created_at, observed_at
+           ) VALUES ($1, 'tibo', 'post', $2, $3, $4, $4)`,
+          [
+            `post-${postIndex}`,
+            `https://x.com/tibo/status/${postIndex}`,
+            `hash-${postIndex}`,
+            createdAt,
+          ],
+        );
+      }
+    }
+    const store = new SqliteRadarReadStore({
+      db,
+      serviceVersion: "test",
+      demoMode: false,
+      now: () => now,
+    });
+
+    try {
+      await expect(store.getStatus()).resolves.toMatchObject({
+        activity: {
+          status: "quiet",
+          routinePhase: "sleeping",
+          likelySleeping: true,
+          sleepWindowUtc: { startHour: 6, endHour: 14 },
         },
       });
     } finally {

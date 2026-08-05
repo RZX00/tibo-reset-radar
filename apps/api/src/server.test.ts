@@ -123,7 +123,11 @@ class MemoryStore implements RadarReadStore {
         lastSuccessAt: "2026-08-03T00:00:00.000Z",
         consecutiveFailures: 0,
       },
-      activity: { status: "active", lastPublicActivityAt: "2026-08-03T00:00:00.000Z" },
+      activity: {
+        status: "active",
+        lastPublicActivityAt: "2026-08-03T00:00:00.000Z",
+        routinePhase: "awake",
+      },
     };
   }
   async getLatestForecast() {

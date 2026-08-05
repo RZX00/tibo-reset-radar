@@ -1086,6 +1086,7 @@ h2 {
     grid-template-columns: auto 1fr;
     gap: 14px;
     padding: 20px 16px;
+    border-top: 0;
   }
   .headline-probabilities {
     grid-template-columns: repeat(3, minmax(0, 1fr));
