@@ -56,6 +56,16 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "clipboard");
 });
 
+/** The toggle cycles, and the starting zone depends on the machine, so click until it lands. */
+async function useTimezone(target: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const toggle = screen.getByRole("button", { name: /切换时区|Switch timezone/ });
+    if (toggle.getAttribute("title") === target) return;
+    await userEvent.click(toggle);
+  }
+  throw new Error(`timezone toggle never reached ${target}`);
+}
+
 describe("App", () => {
   it("maps the agreed San Francisco routine and lets recent activity override sleep", () => {
     expect(getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), null)).toMatchObject({
@@ -184,8 +194,7 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
     // Pin the timezone so the expected labels do not depend on the machine running the test.
-    // One tap moves Asia/Shanghai -> UTC in the documented order.
-    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
+    await useTimezone("UTC");
     expect(
       screen.getByRole("listitem", {
         name: "第 1 天，8月3日 08:00–8月4日 08:00，区间概率 10%",
@@ -202,8 +211,7 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
-    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
+    await useTimezone("America/Los_Angeles");
     await waitFor(() =>
       expect(
         screen.getByRole("listitem", {
