@@ -26,18 +26,38 @@ const CONFIRMED_PATTERNS = [
   // classifies as completed, or every real announcement stalls at candidate forever.
   /\b(?:i|we)(?:'ve|’ve|\s+have|\s+just)\s+(?:just\s+|now\s+)?reset\b/i,
   /\b(?:have|has|had)\s+(?:now\s+)?been\s+reset\b/i,
+  /\breset\s+button\s+(?:has\s+been\s+)?pressed\b/i,
+  /\b(?:i|we)(?:'ve|’ve|\s+have)\s+allowed\b.{0,60}\breset\b/i,
+  /\b(?:i|we)\s+did\b.{0,30}\b(?:full\s+|double\s+)?reset\b/i,
+  /\benjoy\s+(?:a\s+)?(?:full\s+)?reset(?:\s+(?:of\s+)?(?:your\s+)?(?:usage\s+)?limits?)?\b/i,
+  /\b(?:i|we)(?:'m|’m|'re|’re|\s+am|\s+are)\s+(?:once\s+again\s+)?resett?ing\b/i,
+  /\b(?:we\s+are\s+giving|introducing)\b.{0,80}\b(?:usage\s+limits?\s+)?reset\b/i,
+  /\b(?:another|new)\b.{0,40}\b(?:usage\s+)?reset\b.{0,100}\b(?:lands?|landing|should\s+(?:land|show|be\s+showing|have))\b/i,
+  /\b(?:full\s+)?reset\b.{0,60}\bpropagat(?:e|ing)\b/i,
   /(?:重置已完成|已经重置|已完成重置|现已重置|重置成功|正在重置|开始重置|重置进行中)/,
 ];
 const RETRACTED_PATTERNS = [
   /\b(?:reset\s+)?(?:is\s+)?(?:cancelled|canceled|retracted|rolled\s+back|not\s+happening)\b/i,
   /(?:取消|撤回|回滚|不会进行)(?:本次)?重置|重置(?:已)?(?:取消|撤回|回滚)/,
 ];
-const FUTURE_OR_UNCERTAIN_PATTERNS = [
+const FUTURE_PATTERNS = [
   /\b(?:will|might|may|could|hopefully|plan(?:ning)?\s+to|going\s+to)\b.{0,30}\breset\b/i,
+  /\bwill\s+(?:be\s+)?(?:\w+\s+){0,3}resett?ing\b/i,
+  /\breset\s+(?:is\s+)?incoming\b/i,
+  /(?:将会?|可能|希望|计划|预计).{0,20}重置/,
+];
+const UNCERTAIN_PATTERNS = [
   /\b(?:joke|kidding|rumou?r|someone\s+said|they\s+say)\b/i,
-  /(?:将会?|可能|希望|计划|预计|听说|传闻|开玩笑).{0,20}重置/,
+  /(?:听说|传闻|开玩笑).{0,20}重置/,
 ];
 const BANKED_PATTERNS = [/\bbanked\s+reset\b/i, /(?:储备|预存|banked)\s*重置/i];
+const IMMEDIATE_RESET_PATTERNS = [
+  /\b(?:i|we)(?:'ve|’ve|\s+have|\s+just)\s+(?:just\s+|now\s+)?reset\b/i,
+  /\b(?:have|has|had)\s+(?:now\s+)?been\s+reset\b/i,
+  /\breset\s+button\s+(?:has\s+been\s+)?pressed\b/i,
+  /\b(?:i|we)(?:'ve|’ve|\s+have)\s+allowed\b.{0,60}\breset\b/i,
+  /\b(?:i|we)\s+did\b.{0,30}\b(?:full\s+|double\s+)?reset\b/i,
+];
 
 export function evaluateConfirmation(input: ConfirmationInput): ConfirmationDecision {
   const { post, extraction } = input;
@@ -49,7 +69,11 @@ export function evaluateConfirmation(input: ConfirmationInput): ConfirmationDeci
   }
 
   const banked = matchesAny(post.text, BANKED_PATTERNS);
-  if (banked && input.bankedResetPolicy !== "confirm") {
+  if (
+    banked &&
+    input.bankedResetPolicy !== "confirm" &&
+    !matchesAny(post.text, IMMEDIATE_RESET_PATTERNS)
+  ) {
     return decision(
       "forecasting",
       input.bankedResetPolicy === "ignore" ? "banked_reset_ignored" : "banked_reset_forecast_only",
@@ -76,7 +100,14 @@ export function evaluateConfirmation(input: ConfirmationInput): ConfirmationDeci
   ) {
     return decision("forecasting", "no_completed_reset_claim", null, extraction);
   }
-  if (matchesAny(post.text, FUTURE_OR_UNCERTAIN_PATTERNS)) {
+  if (matchesAny(post.text, UNCERTAIN_PATTERNS)) {
+    return candidate(post, extraction, "future_or_uncertain_language");
+  }
+  if (
+    matchesAny(post.text, FUTURE_PATTERNS) &&
+    !matchesAny(post.text, IMMEDIATE_RESET_PATTERNS) &&
+    extraction.explicitResetState !== "rolling_out_now"
+  ) {
     return candidate(post, extraction, "future_or_uncertain_language");
   }
   if (!matchesAny(post.text, CONFIRMED_PATTERNS)) {
