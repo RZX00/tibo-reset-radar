@@ -263,4 +263,22 @@ describe("App", () => {
     expect(brand.parentElement).toHaveTextContent("本项目由");
     expect(brand.parentElement).toHaveTextContent("提供支持");
   });
+
+  it("keeps the group QR small until it is asked to grow", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+
+    const thumb = screen.getByRole("button", { name: dictionaries.zh.community.enlarge });
+    expect(thumb.querySelector("img")).toHaveAttribute("width", "40");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(thumb);
+    const dialog = screen.getByRole("dialog", { name: dictionaries.zh.community.title });
+    expect(dialog.querySelector("img")).toHaveAttribute("width", "280");
+    // A QR that expires has to say so, or a failed scan looks like a broken page.
+    expect(dialog).toHaveTextContent("8 月 12 日前有效");
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
