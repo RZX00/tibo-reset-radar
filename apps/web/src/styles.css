@@ -216,26 +216,27 @@ h2 {
   gap: 8px;
 }
 .icon-button {
+  /* No frame and no fill: the glyph is the control. The 44px box stays as the tap target. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--ink);
-  background: var(--paper);
+  border: 0;
+  color: var(--muted);
+  background: none;
   cursor: pointer;
-  transition:
-    transform 140ms var(--ease-out),
-    background 140ms var(--ease-out);
+  transition: color 140ms var(--ease-out);
 }
 .icon-button:hover {
-  background: oklch(93% 0.014 150);
-  transform: translateY(-1px);
+  color: var(--ink);
+}
+.icon-button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 .icon-button:active {
-  transform: translateY(1px);
+  color: var(--ink);
 }
 .icon-button:disabled {
   cursor: wait;
@@ -1262,17 +1263,18 @@ h2 {
 /* ── community QR ── */
 .group-qr-thumb {
   display: inline-flex;
-  padding: 2px;
-  margin-left: 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  padding: 0;
+  margin-left: 6px;
+  border: 0;
+  /* The plate stays white because a QR needs the contrast, but there is no frame around it. */
   background: #fff;
   cursor: pointer;
   line-height: 0;
+  opacity: 0.85;
 }
 .group-qr-thumb:hover,
 .group-qr-thumb:focus-visible {
-  border-color: var(--ink);
+  opacity: 1;
 }
 .group-qr-thumb img {
   display: block;
