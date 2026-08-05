@@ -11,6 +11,8 @@ export const LANGS: readonly Lang[] = ["zh", "en"];
 export interface Strings {
   langName: string;
   langLabel: string;
+  /** Two characters at most: it sits inside a 44px tap target. */
+  langBadge: string;
   edition: { demo: string; outlook: string };
   avatarAlt: string;
   routineTitle: string;
@@ -25,14 +27,10 @@ export interface Strings {
   lastReset: { label: string; daysAgo: (days: number) => string; none: string };
   actions: {
     timezone: string;
-    refresh: string;
-    refreshTitle: string;
-    share: string;
-    shareTitle: string;
+    switchLanguage: (next: string) => string;
+    switchTimezone: (next: string) => string;
     github: string;
   };
-  shareFeedback: { shared: string; copied: string; cancelled: string; failed: string };
-  shareText: (within24h: string, within48h: string, within168h: string) => string;
   demoBand: string;
   verdictAria: string;
   currentState: (label: string) => string;
@@ -201,6 +199,7 @@ const enReasons: Record<string, string> = {
 const zh: Strings = {
   langName: "中文",
   langLabel: "语言",
+  langBadge: "中",
   edition: { demo: "DEMO DATA · ", outlook: "NEXT RESET OUTLOOK" },
   avatarAlt: "Tibo 头像",
   routineTitle: "根据 Tibo 的常规作息推测；近期公开活动优先",
@@ -219,20 +218,10 @@ const zh: Strings = {
   },
   actions: {
     timezone: "时区",
-    refresh: "刷新雷达",
-    refreshTitle: "刷新",
-    share: "分享预测",
-    shareTitle: "分享",
+    switchLanguage: (next) => `切换语言，下一个：${next}`,
+    switchTimezone: (next) => `切换时区，下一个：${next}`,
     github: "查看 GitHub 仓库",
   },
-  shareFeedback: {
-    shared: "分享成功",
-    copied: "链接已复制",
-    cancelled: "已取消分享",
-    failed: "分享失败，请稍后重试",
-  },
-  shareText: (within24h, within48h, within168h) =>
-    `未来 24 小时 Reset 概率 ${within24h}，未来 48 小时 ${within48h}，未来 7 天 ${within168h}`,
   demoBand: "演示数据 · 真实 Tibo 身份与运行凭据尚未配置",
   verdictAria: "当前 Reset 可能性评估",
   currentState: (label) => `当前公开状态：${label}`,
@@ -355,6 +344,7 @@ const zh: Strings = {
 const en: Strings = {
   langName: "English",
   langLabel: "Language",
+  langBadge: "EN",
   edition: { demo: "DEMO DATA · ", outlook: "NEXT RESET OUTLOOK" },
   avatarAlt: "Tibo avatar",
   routineTitle: "Inferred from Tibo's usual hours; recent public activity wins",
@@ -373,20 +363,10 @@ const en: Strings = {
   },
   actions: {
     timezone: "Timezone",
-    refresh: "Refresh the radar",
-    refreshTitle: "Refresh",
-    share: "Share the forecast",
-    shareTitle: "Share",
+    switchLanguage: (next) => `Switch language, next: ${next}`,
+    switchTimezone: (next) => `Switch timezone, next: ${next}`,
     github: "Open the GitHub repository",
   },
-  shareFeedback: {
-    shared: "Shared",
-    copied: "Link copied",
-    cancelled: "Sharing cancelled",
-    failed: "Sharing failed, try again later",
-  },
-  shareText: (within24h, within48h, within168h) =>
-    `Reset probability: ${within24h} within 24h, ${within48h} within 48h, ${within168h} within 7 days`,
   demoBand: "Demo data · the real target identity and credentials are not configured",
   verdictAria: "Current reset outlook",
   currentState: (label) => `Public state: ${label}`,

@@ -1,5 +1,15 @@
 import { expect, type Page, test } from "@playwright/test";
 
+/** The toggle cycles, and the starting zone depends on the runner, so click until it lands. */
+async function useTimezone(page: Page, target: string): Promise<void> {
+  const toggle = page.getByRole("button", { name: /切换时区|Switch timezone/ });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if ((await toggle.getAttribute("title")) === target) return;
+    await toggle.click();
+  }
+  throw new Error(`timezone toggle never reached ${target}`);
+}
+
 test.beforeEach(async ({ page }) => {
   // The browser reports an English locale; the assertions below read the Chinese page.
   await page.addInitScript(() => window.localStorage.setItem("radar-lang", "zh"));
@@ -51,7 +61,7 @@ test("renders a stable radar and supports the primary interactions", async ({ pa
 test("presents every probability as a time range", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
-  await page.getByLabel("时区").selectOption("UTC");
+  await useTimezone(page, "UTC");
 
   await expect(
     page.getByRole("listitem", {
@@ -60,7 +70,7 @@ test("presents every probability as a time range", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText("四个连续 6 小时时间段")).toBeVisible();
 
-  await page.getByLabel("时区").selectOption("America/Los_Angeles");
+  await useTimezone(page, "America/Los_Angeles");
   await expect(
     page.getByRole("listitem", {
       name: "第 1 天，8月3日 01:00–8月4日 01:00，区间概率 4%",
@@ -101,7 +111,7 @@ test("serves an English page and remembers the choice", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Next 7 days" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.lang)).toBe("en");
 
-  await page.getByLabel("Language").selectOption("zh");
+  await page.getByRole("button", { name: /Switch language/ }).click();
   await expect(page.getByRole("heading", { name: "未来 7 天" })).toBeVisible();
   expect(await page.evaluate(() => window.localStorage.getItem("radar-lang"))).toBe("zh");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(

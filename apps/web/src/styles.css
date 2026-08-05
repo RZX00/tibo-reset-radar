@@ -215,26 +215,6 @@ h2 {
   align-items: center;
   gap: 8px;
 }
-.timezone-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-}
-.timezone-control span {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-.timezone-control select {
-  max-width: 150px;
-  border: 0;
-  color: var(--ink);
-  background: transparent;
-}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -302,29 +282,22 @@ h2 {
   grid-template-columns: auto minmax(260px, 1fr) minmax(430px, 0.95fr);
   align-items: center;
   gap: 20px;
-  padding: 28px 24px;
-  margin: 24px 0 0;
-  border-radius: 8px;
-  border: 1.5px solid var(--verdict-none-border);
-  background: var(--verdict-none-bg);
+  padding: 26px 0;
+  margin: 22px 0 0;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--line);
   color: var(--verdict-none-text);
   transition:
     background 300ms var(--ease-out),
     border-color 300ms var(--ease-out);
 }
 .verdict-hero[data-level="confirmed"] {
-  border-color: var(--verdict-confirmed-border);
-  background: var(--verdict-confirmed-bg);
   color: var(--verdict-confirmed-text);
 }
 .verdict-hero[data-level="high"] {
-  border-color: var(--verdict-high-border);
-  background: var(--verdict-high-bg);
   color: var(--verdict-high-text);
 }
 .verdict-hero[data-level="medium"] {
-  border-color: var(--verdict-medium-border);
-  background: var(--verdict-medium-bg);
   color: var(--verdict-medium-text);
 }
 .verdict-hero[data-level="low"],
@@ -493,10 +466,7 @@ h2 {
 }
 .today-forecast {
   min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper);
+  border-top: 1px solid var(--line);
 }
 .today-summary {
   display: flex;
@@ -539,7 +509,7 @@ h2 {
   border-left: 1px solid var(--line);
 }
 .hourly-window[data-peak="true"] {
-  background: color-mix(in oklch, var(--rain) 8%, var(--paper));
+  box-shadow: inset 0 2px 0 0 var(--ink);
 }
 .hourly-range,
 .hourly-window small {
@@ -560,9 +530,8 @@ h2 {
   margin-top: 20px;
   margin-bottom: 0;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   list-style: none;
 }
 .daily-row {
@@ -579,7 +548,7 @@ h2 {
   border-left: 1px solid var(--line);
 }
 .daily-row[data-peak="true"] {
-  background: color-mix(in oklch, var(--rain) 7%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--ink);
 }
 .daily-date {
   display: grid;
@@ -1107,11 +1076,10 @@ h2 {
     height: 58px;
   }
   .masthead-actions {
-    display: grid;
-    grid-template-columns: 1fr repeat(3, 44px);
-  }
-  .timezone-control {
-    grid-column: 1 / -1;
+    /* Three tap targets in a row instead of two full-width selects stacked above them. */
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
   .verdict-hero {
     grid-template-columns: auto 1fr;
@@ -1290,9 +1258,6 @@ h2 {
 .ewo-logo:focus-visible img {
   opacity: 0.72;
 }
-.lang-control select {
-  min-width: 84px;
-}
 
 /* ── community QR ── */
 .group-qr-thumb {
@@ -1345,4 +1310,18 @@ h2 {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+/* ── icon toggles ── */
+.toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.toggle-badge {
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--muted);
 }
