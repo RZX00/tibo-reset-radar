@@ -5,6 +5,39 @@ export * from "./forecast-v2.js";
 export const ActivityStatusSchema = z.enum(["active", "cooling", "quiet", "data_delayed"]);
 export type ActivityStatus = z.infer<typeof ActivityStatusSchema>;
 
+export const RoutinePhaseSchema = z.enum(["sleeping", "awake", "social", "winding_down"]);
+export type RoutinePhase = z.infer<typeof RoutinePhaseSchema>;
+
+const TIBO_ROUTINE_TIME_ZONE = "America/Los_Angeles";
+const RECENT_ACTIVITY_OVERRIDE_MS = 30 * 60_000;
+const TIBO_ROUTINE_CLOCK = new Intl.DateTimeFormat("en-US", {
+  timeZone: TIBO_ROUTINE_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+export function getTiboRoutinePhase(now: Date, lastPublicActivityAt: string | null): RoutinePhase {
+  const lastActivity = lastPublicActivityAt ? Date.parse(lastPublicActivityAt) : Number.NaN;
+  const activityAge = now.getTime() - lastActivity;
+  if (
+    Number.isFinite(lastActivity) &&
+    activityAge >= 0 &&
+    activityAge <= RECENT_ACTIVITY_OVERRIDE_MS
+  ) {
+    return "awake";
+  }
+
+  const parts = TIBO_ROUTINE_CLOCK.formatToParts(now);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  const minuteOfDay = hour * 60 + minute;
+  if (minuteOfDay >= 30 && minuteOfDay < 9 * 60 + 30) return "sleeping";
+  if (minuteOfDay >= 21 * 60 && minuteOfDay < 23 * 60 + 30) return "social";
+  if (minuteOfDay >= 23 * 60 + 30 || minuteOfDay < 30) return "winding_down";
+  return "awake";
+}
+
 export const FreshnessStatusSchema = z.enum(["fresh", "delayed", "stale"]);
 export type FreshnessStatus = z.infer<typeof FreshnessStatusSchema>;
 
@@ -164,6 +197,7 @@ export interface RadarStatus {
   activity: {
     status: ActivityStatus;
     lastPublicActivityAt: string | null;
+    routinePhase: RoutinePhase;
     likelySleeping?: boolean;
     sleepWindowUtc?: {
       startHour: number;
