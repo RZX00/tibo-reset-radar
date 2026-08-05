@@ -94,6 +94,13 @@ export interface Strings {
     poweredSuffix: string;
     brandLink: string;
   };
+  community: {
+    label: string;
+    enlarge: string;
+    close: string;
+    title: string;
+    expiry: string;
+  };
   relative: {
     none: string;
     seconds: (n: number) => string;
@@ -323,6 +330,13 @@ const zh: Strings = {
     poweredSuffix: "提供支持",
     brandLink: "访问 ewo API",
   },
+  community: {
+    label: "ewo API 答疑交流群",
+    enlarge: "放大群二维码",
+    close: "关闭",
+    title: "扫码加入 ewo API 答疑交流群",
+    expiry: "群二维码 8 月 12 日前有效，过期请到 ewo API 站获取新的入口。",
+  },
   relative: {
     none: "暂无",
     seconds: (n) => `${n} 秒前`,
@@ -472,6 +486,14 @@ const en: Strings = {
     poweredPrefix: "This project is powered by",
     poweredSuffix: "",
     brandLink: "Visit ewo API",
+  },
+  community: {
+    label: "ewo API group chat",
+    enlarge: "Enlarge the group QR code",
+    close: "Close",
+    title: "Scan to join the ewo API group chat",
+    expiry:
+      "This group QR expires on 12 August; after that, find the current one on the ewo API site.",
   },
   relative: {
     none: "never",

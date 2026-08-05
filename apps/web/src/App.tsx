@@ -33,6 +33,7 @@ const TIMEZONES = ["Asia/Shanghai", "UTC", "America/Los_Angeles", "Europe/London
 const TIBO_AVATAR_URL =
   "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_400x400.jpg";
 const TIBO_TIMEZONE = "America/Los_Angeles";
+const GROUP_QR_URL = "/community/ewo-api-group-qr.png";
 
 export interface RoutinePresentation {
   phase: "sleeping" | "awake" | "social" | "winding_down";
@@ -355,6 +356,7 @@ export function App() {
   const [eventsOpen, setEventsOpen] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [qrOpen, setQrOpen] = useState(false);
   const [lang, setLang] = useState<Lang>(detectLang);
   const t = dictionaries[lang];
   const locale = localeFor(lang);
@@ -388,6 +390,15 @@ export function App() {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!qrOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setQrOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [qrOpen]);
 
   const forecast: ForecastSnapshot | null = data?.forecast ?? null;
 
@@ -814,8 +825,42 @@ export function App() {
             <img src="/brand/ewo-api-lockup.svg" alt="ewo API" width="107" height="22" />
           </a>
           {t.footer.poweredSuffix}
+          <button
+            className="group-qr-thumb"
+            type="button"
+            onClick={() => setQrOpen(true)}
+            aria-label={t.community.enlarge}
+            title={t.community.label}
+          >
+            <img src={GROUP_QR_URL} alt={t.community.label} width="40" height="40" />
+          </button>
         </span>
       </footer>
+
+      {qrOpen ? (
+        <div
+          className="qr-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.community.title}
+          onClick={(event) => {
+            // Only the backdrop dismisses; clicks that land on the card keep it open.
+            if (event.target === event.currentTarget) setQrOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setQrOpen(false);
+          }}
+        >
+          <div className="qr-card">
+            <strong>{t.community.title}</strong>
+            <img src={GROUP_QR_URL} alt={t.community.label} width="280" height="280" />
+            <small>{t.community.expiry}</small>
+            <button className="command-button" type="button" onClick={() => setQrOpen(false)}>
+              {t.community.close}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

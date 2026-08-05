@@ -1293,3 +1293,56 @@ h2 {
 .lang-control select {
   min-width: 84px;
 }
+
+/* ── community QR ── */
+.group-qr-thumb {
+  display: inline-flex;
+  padding: 2px;
+  margin-left: 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  line-height: 0;
+}
+.group-qr-thumb:hover,
+.group-qr-thumb:focus-visible {
+  border-color: var(--ink);
+}
+.group-qr-thumb img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  /* The source is a bitmap QR; nearest keeps the modules crisp when scaled down. */
+  image-rendering: pixelated;
+}
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--ink) 55%, transparent);
+}
+.qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: min(92vw, 360px);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  text-align: center;
+}
+.qr-card img {
+  width: min(72vw, 280px);
+  height: auto;
+  image-rendering: pixelated;
+}
+.qr-card small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
