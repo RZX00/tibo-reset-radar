@@ -258,5 +258,8 @@ describe("App", () => {
     const brand = screen.getByRole("link", { name: dictionaries.zh.footer.brandLink });
     expect(brand).toHaveAttribute("href", "https://api.ewo.so");
     expect(brand.querySelector("img")).toHaveAttribute("src", "/brand/ewo-lockup.svg");
+    // The credit is one sentence around the logo, not a bare mark.
+    expect(brand.parentElement).toHaveTextContent("本项目由");
+    expect(brand.parentElement).toHaveTextContent("提供支持");
   });
 });

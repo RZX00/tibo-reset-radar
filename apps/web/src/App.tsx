@@ -802,7 +802,7 @@ export function App() {
           </p>
         </div>
         <span className="footer-brand">
-          {t.footer.experiment}{" "}
+          {t.footer.poweredPrefix}
           <a
             className="ewo-logo"
             href="https://api.ewo.so"
@@ -813,6 +813,7 @@ export function App() {
           >
             <img src="/brand/ewo-lockup.svg" alt="ewo" width="72" height="24" />
           </a>
+          {t.footer.poweredSuffix}
         </span>
       </footer>
     </main>

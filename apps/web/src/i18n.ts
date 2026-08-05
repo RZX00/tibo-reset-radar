@@ -89,7 +89,9 @@ export interface Strings {
     updated: (relative: string) => string;
     source: string;
     disclaimer: string;
-    experiment: string;
+    /** The credit reads "<prefix> [ewo] <suffix>", because Chinese puts the verb after the name. */
+    poweredPrefix: string;
+    poweredSuffix: string;
     brandLink: string;
   };
   relative: {
@@ -317,7 +319,8 @@ const zh: Strings = {
     updated: (relative) => `更新于 ${relative}`,
     source: "数据来自公开动态",
     disclaimer: "启发式预测不代表 Reset 已确认；模型概率最高为 99%。",
-    experiment: "开源实验项目",
+    poweredPrefix: "本项目由",
+    poweredSuffix: "提供支持",
     brandLink: "访问 ewo",
   },
   relative: {
@@ -466,7 +469,8 @@ const en: Strings = {
     updated: (relative) => `updated ${relative}`,
     source: "built from public posts",
     disclaimer: "A heuristic forecast is not a confirmed reset; the model never exceeds 99%.",
-    experiment: "Open-source experiment by",
+    poweredPrefix: "This project is powered by",
+    poweredSuffix: "",
     brandLink: "Visit ewo",
   },
   relative: {
