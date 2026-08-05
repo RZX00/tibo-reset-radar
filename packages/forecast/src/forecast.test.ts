@@ -25,6 +25,10 @@ describe("forecast probability properties", () => {
         makeInput({
           signals,
           activityStatus: activity[Math.floor(random() * activity.length)] ?? "quiet",
+          lastResetHoursAgo: random() * 240,
+          recent24hPostCount: Math.floor(random() * 30),
+          baselineDailyPostAverage: 1 + random() * 12,
+          baselineWindowComplete: true,
         }),
       );
       const buckets = snapshot.days.flatMap((day) => day.buckets);
@@ -59,8 +63,69 @@ describe("forecast probability properties", () => {
     const input = makeInput({
       signals: [randomSignal(1, seededRandom(9))],
       activityStatus: "active",
+      recent24hPostCount: 6,
+      baselineDailyPostAverage: 3,
+      baselineWindowComplete: true,
     });
     expect(generateForecast(input)).toEqual(generateForecast(structuredClone(input)));
+  });
+
+  it("starts low after a reset and increases as the historical cadence window approaches", () => {
+    const justReset = generateForecast(makeInput({ lastResetHoursAgo: 1 }));
+    const twoDaysLater = generateForecast(makeInput({ lastResetHoursAgo: 60 }));
+
+    expect(justReset.cumulative.within24h).toBeCloseTo(0.08, 12);
+    expect(justReset.cumulative.within48h).toBeCloseTo(0.3, 12);
+    expect(justReset.cumulative.within168h).toBeCloseTo(0.75, 12);
+    expect(twoDaysLater.cumulative.within24h).toBeCloseTo(0.35, 12);
+    expect(twoDaysLater.cumulative.within48h).toBeCloseTo(0.6, 12);
+    expect(twoDaysLater.cumulative.within168h).toBeCloseTo(0.85, 12);
+  });
+
+  it("raises near-term probability when six posts are twice the normal daily activity", () => {
+    const snapshot = generateForecast(
+      makeInput({
+        lastResetHoursAgo: 1,
+        recent24hPostCount: 6,
+        baselineDailyPostAverage: 3,
+        baselineWindowComplete: true,
+      }),
+    );
+
+    expect(snapshot.cumulative.within24h).toBeCloseTo(0.218, 12);
+    expect(snapshot.cumulative.within48h).toBeCloseTo(0.363, 12);
+    expect(snapshot.cumulative.within168h).toBeCloseTo(0.7575, 12);
+    expect(snapshot.days[0]?.buckets[0]?.topReasonCodes).toContain("post_activity_high");
+  });
+
+  it("lowers the next 24 hours during Tibo's usual sleep window", () => {
+    const sleeping = generateForecast(
+      makeInput({ generatedAt: "2026-08-05T08:00:00.000Z", lastResetHoursAgo: 96 }),
+    );
+    const awake = generateForecast(
+      makeInput({ generatedAt: "2026-08-05T17:00:00.000Z", lastResetHoursAgo: 96 }),
+    );
+
+    expect(sleeping.cumulative.within24h).toBeLessThan(awake.cumulative.within24h);
+    expect(sleeping.cumulative.within48h).toBeLessThan(awake.cumulative.within48h);
+    expect(sleeping.cumulative.within168h).toBeLessThan(awake.cumulative.within168h);
+    expect(sleeping.days[0]?.buckets[0]?.intervalProbability).toBeLessThan(
+      sleeping.days[0]?.buckets[1]?.intervalProbability ?? 0,
+    );
+    expect(sleeping.days[0]?.buckets[0]?.topReasonCodes).toContain("circadian_sleep");
+  });
+
+  it("ignores post wording and falls back to cadence when the activity baseline is incomplete", () => {
+    const withoutSignal = generateForecast(makeInput({ signals: [] }));
+    const withStrongSignal = generateForecast(
+      makeInput({ signals: [randomSignal(1, seededRandom(3))] }),
+    );
+
+    expect(withStrongSignal.cumulative).toEqual(withoutSignal.cumulative);
+    expect(withStrongSignal.days).toEqual(withoutSignal.days);
+    expect(withStrongSignal.days[0]?.buckets[0]?.topReasonCodes).toContain(
+      "post_activity_baseline_unavailable",
+    );
   });
 
   it("does not apply a freshness penalty to event probability", () => {
@@ -149,6 +214,10 @@ function makeInput(
     signals?: PersistedForecastSignal[];
     activityStatus?: ForecastGenerationInput["activity"]["status"];
     freshnessStatus?: ForecastGenerationInput["dataFreshness"]["status"];
+    lastResetHoursAgo?: number;
+    recent24hPostCount?: number;
+    baselineDailyPostAverage?: number | null;
+    baselineWindowComplete?: boolean;
   } = {},
 ): ForecastGenerationInput {
   const freshnessStatus = options.freshnessStatus ?? "fresh";
@@ -156,7 +225,7 @@ function makeInput(
     runId: options.runId ?? "run-1",
     generatedAt: options.generatedAt ?? GENERATED_AT,
     timezone: "UTC",
-    modelVersion: "heuristic-v1",
+    modelVersion: "cadence-activity-v1",
     activity: {
       status: options.activityStatus ?? "cooling",
       lastPublicActivityAt: "2026-08-02T23:00:00.000Z",
@@ -168,6 +237,15 @@ function makeInput(
       confidence: freshnessStatus === "fresh" ? 1 : freshnessStatus === "delayed" ? 0.7 : 0.3,
     },
     signals: options.signals ?? [],
+    lastResetAt: new Date(
+      Date.parse(options.generatedAt ?? GENERATED_AT) -
+        (options.lastResetHoursAgo ?? 1) * 60 * 60 * 1_000,
+    ).toISOString(),
+    activityMetrics: {
+      recent24hPostCount: options.recent24hPostCount ?? 0,
+      baselineDailyPostAverage: options.baselineDailyPostAverage ?? null,
+      baselineWindowComplete: options.baselineWindowComplete ?? false,
+    },
   };
 }
 

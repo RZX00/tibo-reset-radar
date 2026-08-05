@@ -29,11 +29,19 @@ import { SqliteSourceRepository, type TimelineCollection } from "@tibo-radar/x-s
 const FORECAST_SIGNAL_WINDOW_MS = 168 * 60 * 60 * 1_000;
 const FORECAST_V2_POST_WINDOW_MS = 90 * 24 * 60 * 60 * 1_000;
 const FORECAST_V2_EXTERNAL_WINDOW_MS = 180 * 24 * 60 * 60 * 1_000;
+const FORECAST_ACTIVITY_BASELINE_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export interface ForecastContext {
   signals: PersistedForecastSignal[];
   previousSnapshot: ForecastSnapshot | null;
   confirmedSignal: ResetEvent | null;
+  latestResetAt: string | null;
+  activityMetrics: {
+    recent24hPostCount: number;
+    baselineDailyPostAverage: number | null;
+    baselineWindowComplete: boolean;
+  };
   lastObservedAt: string | null;
   lastPublicActivityAt: string | null;
   consecutiveFailures: number;
@@ -253,34 +261,39 @@ export class SqliteWorkerRepository {
     const generatedMs = Date.parse(generatedAt);
     if (!Number.isFinite(generatedMs)) throw new Error("generatedAt must be a valid ISO date-time");
     const windowStart = new Date(generatedMs - FORECAST_SIGNAL_WINDOW_MS).toISOString();
-    const [forecastResult, eventResult, statusResult, latestResetResult] = await Promise.all([
-      this.db.query<{ summary_json: string }>(
-        `SELECT summary_json FROM forecast_runs WHERE status = 'completed'
+    const recentActivityStart = new Date(generatedMs - DAY_MS).toISOString();
+    const activityBaselineStart = new Date(
+      generatedMs - (FORECAST_ACTIVITY_BASELINE_DAYS + 1) * DAY_MS,
+    ).toISOString();
+    const [forecastResult, eventResult, statusResult, latestResetResult, activityResult] =
+      await Promise.all([
+        this.db.query<{ summary_json: string }>(
+          `SELECT summary_json FROM forecast_runs WHERE status = 'completed'
          ORDER BY generated_at DESC LIMIT 1`,
-      ),
-      this.db.query<{
-        event_id: string;
-        status: "candidate_confirmation" | "confirmed_reset" | "retracted";
-        occurred_at: string | null;
-        scope: string;
-        evidence_post_ids: string;
-        supersedes_event_id: string | null;
-      }>(
-        `SELECT event_id, status, occurred_at, scope, evidence_post_ids, supersedes_event_id
+        ),
+        this.db.query<{
+          event_id: string;
+          status: "candidate_confirmation" | "confirmed_reset" | "retracted";
+          occurred_at: string | null;
+          scope: string;
+          evidence_post_ids: string;
+          supersedes_event_id: string | null;
+        }>(
+          `SELECT event_id, status, occurred_at, scope, evidence_post_ids, supersedes_event_id
          FROM reset_events ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
-      ),
-      this.db.query<{
-        last_observed_at: string | null;
-        last_public_activity_at: string | null;
-        consecutive_failures: number;
-      }>(
-        `SELECT
+        ),
+        this.db.query<{
+          last_observed_at: string | null;
+          last_public_activity_at: string | null;
+          consecutive_failures: number;
+        }>(
+          `SELECT
            (SELECT MAX(last_success_at) FROM collector_cursors) AS last_observed_at,
            (SELECT MAX(created_at) FROM source_posts WHERE deleted_at IS NULL) AS last_public_activity_at,
            COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0) AS consecutive_failures`,
-      ),
-      this.db.query<{ occurred_at: string }>(
-        `SELECT confirmed.occurred_at
+        ),
+        this.db.query<{ occurred_at: string }>(
+          `SELECT confirmed.occurred_at
          FROM reset_events confirmed
          WHERE confirmed.status = 'confirmed_reset'
            AND confirmed.occurred_at IS NOT NULL
@@ -294,10 +307,33 @@ export class SqliteWorkerRepository {
                AND correction.updated_at <= $1
            )
          ORDER BY confirmed.occurred_at DESC LIMIT 1`,
-        [generatedAt],
-      ),
-    ]);
+          [generatedAt],
+        ),
+        this.db.query<{
+          recent_post_count: number;
+          baseline_post_count: number;
+          first_post_at: string | null;
+        }>(
+          `SELECT
+           COALESCE(SUM(CASE
+             WHEN source_kind != 'repost' AND created_at > $1 AND created_at <= $3 THEN 1
+             ELSE 0
+           END), 0) AS recent_post_count,
+           COALESCE(SUM(CASE
+             WHEN source_kind != 'repost' AND created_at > $2 AND created_at <= $1 THEN 1
+             ELSE 0
+           END), 0) AS baseline_post_count,
+           MIN(CASE WHEN source_kind != 'repost' THEN created_at END) AS first_post_at
+         FROM source_posts
+         WHERE deleted_at IS NULL AND created_at <= $3`,
+          [recentActivityStart, activityBaselineStart, generatedAt],
+        ),
+      ]);
     const latestResetAt = latestResetResult.rows[0]?.occurred_at ?? null;
+    const activityRow = activityResult.rows[0];
+    const baselineWindowComplete = Boolean(
+      activityRow?.first_post_at && activityRow.first_post_at <= activityBaselineStart,
+    );
     // A late backfill must retain source chronology. Evidence resolved by the latest effective
     // primary Reset belongs to the previous cycle and cannot predict the next one.
     const signalsResult = await this.db.query<{
@@ -348,6 +384,14 @@ export class SqliteWorkerRepository {
               supersedesEventId: event.supersedes_event_id,
             }
           : null,
+      latestResetAt,
+      activityMetrics: {
+        recent24hPostCount: activityRow?.recent_post_count ?? 0,
+        baselineDailyPostAverage: baselineWindowComplete
+          ? (activityRow?.baseline_post_count ?? 0) / FORECAST_ACTIVITY_BASELINE_DAYS
+          : null,
+        baselineWindowComplete,
+      },
       lastObservedAt: status?.last_observed_at ?? null,
       lastPublicActivityAt: status?.last_public_activity_at ?? null,
       consecutiveFailures: status?.consecutive_failures ?? 0,

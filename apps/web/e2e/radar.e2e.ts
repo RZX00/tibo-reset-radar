@@ -1,15 +1,33 @@
 import { expect, type Page, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
+  await page.route("https://pbs.twimg.com/profile_images/**", async (route) => {
+    await route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  });
   await mockRadarApi(page);
 });
 
 test("renders a stable radar and supports the primary interactions", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
-  // The hero answers first; the cumulative band now lives inside the detail section.
-  await expect(page.getByText("7 天", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("figure", { name: "未来 24 小时发生重置的概率 4%" })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "未来 48 小时发生重置的概率 8%" })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "未来 7 天发生重置的概率 28%" })).toBeVisible();
   await expect(page.getByText("演示数据", { exact: false })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Tibo 头像" })).toBeVisible();
+  await expect(page.locator(".routine-chip")).toBeVisible();
+  await expect(page.locator(".identity-line")).toContainText("上次 Reset");
+  await expect(page.locator(".last-reset-bar")).toHaveCount(0);
+  await expect(page.getByText("Tibo 当前状态")).toHaveCount(0);
+  await expect(page.getByText(/数据正常 · 更新于/)).toBeVisible();
+  await page.getByText(/当前公开状态：/).click();
+  await expect(page.getByText("公开状态说明")).toBeVisible();
 
   const edition = await page.locator(".edition").boundingBox();
   const title = await page.getByRole("heading", { name: "Tibo Reset Radar" }).boundingBox();
@@ -20,20 +38,12 @@ test("renders a stable radar and supports the primary interactions", async ({ pa
     true,
   );
 
-  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
-  await expect(page.getByLabel("累计概率")).toContainText("168 小时");
-  await page.getByRole("button", { name: /DAY 4/ }).click();
-  await expect(page.getByText("DAY 4 · 6H WINDOWS")).toBeVisible();
+  const dailyForecast = page.getByRole("list", { name: "未来七天区间概率" });
+  await expect(dailyForecast).toBeVisible();
+  await expect(dailyForecast.getByRole("listitem")).toHaveCount(7);
+  await expect(page.locator(".hourly-meter, .daily-track")).toHaveCount(0);
   await page.getByRole("button", { name: /近 24 小时原始推文/ }).click();
   await expect(page.getByText("Reset timing update soon.")).toBeVisible();
-
-  if (test.info().project.name === "mobile-chromium") {
-    expect(
-      await page
-        .locator(".forecast-strip")
-        .evaluate((element) => element.scrollWidth > element.clientWidth),
-    ).toBe(true);
-  }
 });
 
 test("presents every probability as a time range", async ({ page }) => {
@@ -41,21 +51,19 @@ test("presents every probability as a time range", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
   await page.getByLabel("时区").selectOption("UTC");
 
-  // A percentage belongs to an interval; a bare start time reads as a predicted reset moment.
-  await expect(page.getByText("预期时段", { exact: false })).toContainText(/\d{2}:\d{2}–/);
-  // The six-hour cards live behind the detail toggle.
-  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
-  await expect(page.getByText("8月3日 08:00–14:00").first()).toBeVisible();
-  // Crossing midnight has to stay readable in both directions.
-  await expect(page.getByText("8月3日 20:00–8月4日 02:00")).toBeVisible();
-  await expect(page.getByText(/每格是该 6 小时区间内发生的概率/)).toBeVisible();
-  await expect(page.getByRole("progressbar").first()).toHaveAttribute(
-    "aria-label",
-    "8月3日 08:00–14:00 区间概率",
-  );
+  await expect(
+    page.getByRole("listitem", {
+      name: "第 1 天，8月3日 08:00–8月4日 08:00，区间概率 4%",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("四个连续 6 小时时间段")).toBeVisible();
 
   await page.getByLabel("时区").selectOption("America/Los_Angeles");
-  await expect(page.getByText("8月3日 01:00–07:00").first()).toBeVisible();
+  await expect(
+    page.getByRole("listitem", {
+      name: "第 1 天，8月3日 01:00–8月4日 01:00，区间概率 4%",
+    }),
+  ).toBeVisible();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -78,7 +86,6 @@ test("fits the narrowest phone without sideways scrolling", async ({ page }) => 
   });
   expect(overflowing).toEqual([]);
 
-  await page.getByRole("button", { name: /7 天详细预测数据/ }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -142,7 +149,8 @@ async function mockRadarApi(page: Page): Promise<void> {
               authorId: "demo-tibo",
               authorDisplayName: "Tibo",
               authorHandle: "tibo_demo",
-              authorAvatarUrl: null,
+              authorAvatarUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' fill='%231c2833'/%3E%3C/svg%3E",
               sourceKind: "reply",
               conversationId: "p1",
               referencedPostIds: [],

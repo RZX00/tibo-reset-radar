@@ -98,16 +98,25 @@ export class RadarWorker {
       context.consecutiveFailures,
     );
     const inputHash = createHash("sha256")
-      .update(JSON.stringify({ signals: context.signals, activity, dataFreshness }))
+      .update(
+        JSON.stringify({
+          lastResetAt: context.latestResetAt,
+          activityMetrics: context.activityMetrics,
+          activity,
+          dataFreshness,
+        }),
+      )
       .digest("hex");
     const snapshot = generateForecast({
       runId: randomUUID(),
       generatedAt,
       timezone: "UTC",
-      modelVersion: "heuristic-v1",
+      modelVersion: "cadence-activity-circadian-v1",
       activity,
       dataFreshness,
       signals: context.signals,
+      lastResetAt: context.latestResetAt,
+      activityMetrics: context.activityMetrics,
       confirmedSignal: context.confirmedSignal,
       previousSnapshot: context.previousSnapshot,
     });

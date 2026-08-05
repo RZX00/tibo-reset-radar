@@ -164,6 +164,12 @@ export interface RadarStatus {
   activity: {
     status: ActivityStatus;
     lastPublicActivityAt: string | null;
+    likelySleeping?: boolean;
+    sleepWindowUtc?: {
+      startHour: number;
+      endHour: number;
+      sampleSize: number;
+    } | null;
   };
 }
 

@@ -174,7 +174,7 @@ export function generateShadowForecastV2(
       within168h: cumulativeAt(27),
     },
     days,
-    disclaimer: "Shadow forecast only; it does not affect the public heuristic-v1 forecast.",
+    disclaimer: "Shadow forecast only; it does not affect the public cadence-activity-v1 forecast.",
   });
   return { features, forecast };
 }
