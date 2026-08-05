@@ -1274,7 +1274,7 @@ h2 {
   gap: 6px;
   white-space: nowrap;
 }
-/* The brand lockup is vector, so it stays crisp anywhere; the page is paper-light, so the
+/* The ewo API lockup is vector, so it stays crisp anywhere; the page is paper-light, so the
    light-mode file is the correct one and needs no recolouring. */
 .ewo-logo {
   display: inline-flex;

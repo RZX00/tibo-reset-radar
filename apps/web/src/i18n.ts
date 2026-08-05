@@ -321,7 +321,7 @@ const zh: Strings = {
     disclaimer: "启发式预测不代表 Reset 已确认；模型概率最高为 99%。",
     poweredPrefix: "本项目由",
     poweredSuffix: "提供支持",
-    brandLink: "访问 ewo",
+    brandLink: "访问 ewo API",
   },
   relative: {
     none: "暂无",
@@ -471,7 +471,7 @@ const en: Strings = {
     disclaimer: "A heuristic forecast is not a confirmed reset; the model never exceeds 99%.",
     poweredPrefix: "This project is powered by",
     poweredSuffix: "",
-    brandLink: "Visit ewo",
+    brandLink: "Visit ewo API",
   },
   relative: {
     none: "never",

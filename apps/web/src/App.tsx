@@ -811,7 +811,7 @@ export function App() {
             aria-label={t.footer.brandLink}
             onClick={() => track("ewo_click")}
           >
-            <img src="/brand/ewo-lockup.svg" alt="ewo" width="72" height="24" />
+            <img src="/brand/ewo-api-lockup.svg" alt="ewo API" width="107" height="22" />
           </a>
           {t.footer.poweredSuffix}
         </span>
