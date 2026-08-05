@@ -53,7 +53,6 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   vi.restoreAllMocks();
-  Reflect.deleteProperty(navigator, "share");
   Reflect.deleteProperty(navigator, "clipboard");
 });
 
@@ -153,10 +152,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("Reset signal update")).toBeInTheDocument());
   });
 
-  it("shows the identity and three headline probabilities, then reports successful sharing", async () => {
-    const share = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "share", { configurable: true, value: share });
-
+  it("shows the identity and three headline probabilities", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Tibo 头像" })).toHaveAttribute(
@@ -182,28 +178,14 @@ describe("App", () => {
     expect(screen.getByText("公开活动正在减少")).toBeInTheDocument();
     expect(screen.getByText("近期没有新公开动态")).toBeInTheDocument();
     expect(screen.getByText("采集暂时无法确认")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("分享成功");
-    expect(share).toHaveBeenCalledOnce();
-  });
-
-  it("reports sharing failures to assistive technology", async () => {
-    const share = vi.fn().mockRejectedValue(new Error("share unavailable"));
-    Object.defineProperty(navigator, "share", { configurable: true, value: share });
-
-    render(<App />);
-    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("分享失败，请稍后重试");
   });
 
   it("labels every probability with the interval it belongs to", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
     // Pin the timezone so the expected labels do not depend on the machine running the test.
-    await userEvent.selectOptions(screen.getByLabelText("时区"), "UTC");
+    // One tap moves Asia/Shanghai -> UTC in the documented order.
+    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
     expect(
       screen.getByRole("listitem", {
         name: "第 1 天，8月3日 08:00–8月4日 08:00，区间概率 10%",
@@ -220,7 +202,8 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText("时区"), "America/Los_Angeles");
+    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
+    await userEvent.click(screen.getByRole("button", { name: /切换时区/ }));
     await waitFor(() =>
       expect(
         screen.getByRole("listitem", {
@@ -242,7 +225,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("en");
 
-    await userEvent.selectOptions(screen.getByLabelText(dictionaries.en.langLabel), "zh");
+    await userEvent.click(screen.getByRole("button", { name: /Switch language/ }));
     await waitFor(() =>
       expect(screen.getAllByText(dictionaries.zh.headline.within24h).length).toBeGreaterThan(0),
     );

@@ -215,26 +215,6 @@ h2 {
   align-items: center;
   gap: 8px;
 }
-.timezone-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-}
-.timezone-control span {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-.timezone-control select {
-  max-width: 150px;
-  border: 0;
-  color: var(--ink);
-  background: transparent;
-}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -1107,11 +1087,10 @@ h2 {
     height: 58px;
   }
   .masthead-actions {
-    display: grid;
-    grid-template-columns: 1fr repeat(3, 44px);
-  }
-  .timezone-control {
-    grid-column: 1 / -1;
+    /* Three tap targets in a row instead of two full-width selects stacked above them. */
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
   .verdict-hero {
     grid-template-columns: auto 1fr;
@@ -1290,9 +1269,6 @@ h2 {
 .ewo-logo:focus-visible img {
   opacity: 0.72;
 }
-.lang-control select {
-  min-width: 84px;
-}
 
 /* ── community QR ── */
 .group-qr-thumb {
@@ -1345,4 +1321,18 @@ h2 {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+/* ── icon toggles ── */
+.toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.toggle-badge {
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--muted);
 }

@@ -6,12 +6,12 @@ import {
   ChevronDown,
   ExternalLink,
   Github,
+  Globe,
   Info,
-  LoaderCircle,
+  Languages,
   Moon,
   Radio,
   RefreshCw,
-  Share2,
   Sun,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -34,6 +34,19 @@ const TIBO_AVATAR_URL =
   "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_400x400.jpg";
 const TIBO_TIMEZONE = "America/Los_Angeles";
 const GROUP_QR_URL = "/community/ewo-api-group-qr.png";
+// A pure icon would hide which zone every time on the page belongs to, so each toggle keeps a
+// two-or-three letter badge: still one tap target, but the page never lies about its own clock.
+const TIMEZONE_BADGES: Record<string, string> = {
+  "Asia/Shanghai": "SH",
+  UTC: "UTC",
+  "America/Los_Angeles": "LA",
+  "Europe/London": "LDN",
+};
+
+function nextIn<T>(values: readonly T[], current: T): T {
+  const index = values.indexOf(current);
+  return values[(index + 1) % values.length] ?? values[0] ?? current;
+}
 
 export interface RoutinePresentation {
   phase: "sleeping" | "awake" | "social" | "winding_down";
@@ -352,9 +365,7 @@ export function App() {
   );
   const [data, setData] = useState<RadarData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
-  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [qrOpen, setQrOpen] = useState(false);
   const [lang, setLang] = useState<Lang>(detectLang);
@@ -368,7 +379,6 @@ export function App() {
 
   const refresh = useCallback(async () => {
     const controller = new AbortController();
-    setRefreshing(true);
     setError(null);
     try {
       setData(await loadRadar(timezone, controller.signal));
@@ -376,8 +386,6 @@ export function App() {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
         setError(caught instanceof RadarApiError ? caught.message : t.error.offline);
       }
-    } finally {
-      setRefreshing(false);
     }
     return () => controller.abort();
   }, [timezone, t]);
@@ -419,38 +427,6 @@ export function App() {
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
       .slice(0, 4) as [string, number][];
   }, [forecast]);
-
-  async function share() {
-    if (!forecast) return;
-    setShareFeedback(null);
-    const payload = {
-      title: "Tibo Reset Radar",
-      text: t.shareText(
-        percent(forecast.cumulative.within24h),
-        percent(forecast.cumulative.within48h),
-        percent(forecast.cumulative.within168h),
-      ),
-      url: window.location.href,
-    };
-    try {
-      if (navigator.share) {
-        await navigator.share(payload);
-        setShareFeedback(t.shareFeedback.shared);
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(window.location.href);
-        setShareFeedback(t.shareFeedback.copied);
-      } else {
-        throw new Error("share is unavailable");
-      }
-      track("share_forecast", { probability: Math.round(forecast.cumulative.within168h * 100) });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setShareFeedback(t.shareFeedback.cancelled);
-      } else {
-        setShareFeedback(t.shareFeedback.failed);
-      }
-    }
-  }
 
   if (!data && !error) return <Skeleton />;
   if (!data && error) return <ErrorState message={error} onRetry={() => void refresh()} t={t} />;
@@ -545,48 +521,27 @@ export function App() {
           </div>
         </div>
         <div className="masthead-actions">
-          <label className="timezone-control lang-control">
-            <span>{t.langLabel}</span>
-            <select
-              value={lang}
-              onChange={(event) => setLang(event.target.value as Lang)}
-              aria-label={t.langLabel}
-            >
-              {LANGS.map((item) => (
-                <option value={item} key={item}>
-                  {dictionaries[item].langName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="timezone-control">
-            <span>{t.actions.timezone}</span>
-            <select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
-              {[timezone, ...TIMEZONES.filter((item) => item !== timezone)].map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
           <button
-            className="icon-button"
+            className="icon-button toggle-button"
             type="button"
-            onClick={() => void refresh()}
-            aria-label={t.actions.refresh}
-            title={t.actions.refreshTitle}
-            disabled={refreshing}
+            onClick={() => setLang(nextIn(LANGS, lang))}
+            aria-label={t.actions.switchLanguage(dictionaries[nextIn(LANGS, lang)].langName)}
+            title={dictionaries[lang].langName}
           >
-            {refreshing ? <LoaderCircle className="spin" size={18} /> : <RefreshCw size={18} />}
+            <Languages size={18} aria-hidden="true" />
+            <span className="toggle-badge">{t.langBadge}</span>
           </button>
           <button
-            className="icon-button"
+            className="icon-button toggle-button"
             type="button"
-            onClick={() => void share()}
-            aria-label={t.actions.share}
-            title={t.actions.shareTitle}
+            onClick={() => setTimezone(nextIn(TIMEZONES, timezone))}
+            aria-label={t.actions.switchTimezone(nextIn(TIMEZONES, timezone))}
+            title={timezone}
           >
-            <Share2 size={18} />
+            <Globe size={18} aria-hidden="true" />
+            <span className="toggle-badge">
+              {TIMEZONE_BADGES[timezone] ?? timezone.slice(0, 3)}
+            </span>
           </button>
           <a
             className="icon-button"
@@ -601,12 +556,6 @@ export function App() {
           </a>
         </div>
       </header>
-
-      {shareFeedback ? (
-        <p className="action-feedback" role="status" aria-live="polite">
-          {shareFeedback}
-        </p>
-      ) : null}
 
       {data.status.demoMode ? <div className="demo-band">{t.demoBand}</div> : null}
 
