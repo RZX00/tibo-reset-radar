@@ -17,6 +17,15 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { track } from "./analytics.js";
 import { loadRadar, RadarApiError } from "./api.js";
+import {
+  detectLang,
+  dictionaries,
+  LANGS,
+  type Lang,
+  localeFor,
+  rememberLang,
+  type Strings,
+} from "./i18n.js";
 
 type RadarData = Awaited<ReturnType<typeof loadRadar>>;
 
@@ -34,6 +43,7 @@ export interface RoutinePresentation {
 export function getRoutinePresentation(
   now: Date,
   lastPublicActivityAt: string | null,
+  t: Strings = dictionaries.zh,
 ): RoutinePresentation {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TIBO_TIMEZONE,
@@ -49,18 +59,18 @@ export function getRoutinePresentation(
   const activityAge = now.getTime() - lastActivity;
 
   if (Number.isFinite(lastActivity) && activityAge >= 0 && activityAge <= 30 * 60_000) {
-    return { phase: "awake", label: "醒着 · 刚刚有公开活动", localTime };
+    return { phase: "awake", label: t.routine.awakeRecent, localTime };
   }
   if (minuteOfDay >= 30 && minuteOfDay < 9 * 60 + 30) {
-    return { phase: "sleeping", label: "大概率睡觉", localTime };
+    return { phase: "sleeping", label: t.routine.sleeping, localTime };
   }
   if (minuteOfDay >= 21 * 60 && minuteOfDay < 23 * 60 + 30) {
-    return { phase: "social", label: "通常在刷推", localTime };
+    return { phase: "social", label: t.routine.social, localTime };
   }
   if (minuteOfDay >= 23 * 60 + 30 || minuteOfDay < 30) {
-    return { phase: "winding_down", label: "可能准备休息", localTime };
+    return { phase: "winding_down", label: t.routine.windingDown, localTime };
   }
-  return { phase: "awake", label: "大概率醒着", localTime };
+  return { phase: "awake", label: t.routine.awake, localTime };
 }
 
 // 主结论：根据7天累计概率 + reset状态 生成一句话答案
@@ -76,125 +86,77 @@ function getVerdict(
   within48h: number,
   within24h: number,
   allCalm: boolean,
+  t: Strings,
 ): VerdictInfo {
   if (resetState === "confirmed_reset") {
     return {
       level: "confirmed",
-      headline: "Reset 已确认",
-      sub: "权威来源已宣布，账户配额即将恢复。实际到账时间因账户而异。",
+      headline: t.verdict.confirmed.headline,
+      sub: t.verdict.confirmed.sub,
     };
   }
   if (resetState === "candidate_confirmation") {
     return {
       level: "high",
-      headline: "发现候选信号，正在核实",
-      sub: "系统检测到疑似确认信号，正在保守核对权威来源，请稍后刷新。",
+      headline: t.verdict.candidate.headline,
+      sub: t.verdict.candidate.sub,
     };
   }
   if (within24h >= 0.3) {
     return {
       level: "high",
-      headline: "今天可能性较高，建议持续关注",
-      sub: `未来 24 小时累计概率 ${percent(within24h)}，信号较强，推荐今天保持关注。`,
+      headline: t.verdict.high24.headline,
+      sub: t.verdict.high24.sub(percent(within24h)),
     };
   }
   if (within48h >= 0.3) {
     return {
       level: "high",
-      headline: "近两天可能性较高，建议留意",
-      sub: `未来 48 小时累计概率 ${percent(within48h)}，信号有所增强，建议今明两天关注。`,
+      headline: t.verdict.high48.headline,
+      sub: t.verdict.high48.sub(percent(within48h)),
     };
   }
   if (within48h >= 0.15) {
     return {
       level: "medium",
-      headline: "近两天有一定可能性",
-      sub: `未来 48 小时累计概率 ${percent(within48h)}，存在一定信号，建议偶尔查看。`,
+      headline: t.verdict.medium.headline,
+      sub: t.verdict.medium.sub(percent(within48h)),
     };
   }
   if (within168h >= 0.15) {
     return {
       level: "low",
-      headline: "信号较弱，本周可能性低",
-      sub: `未来 48 小时 ${percent(within48h)}，7 天累计 ${percent(within168h)}，当前无明确信号。`,
+      headline: t.verdict.low.headline,
+      sub: t.verdict.low.sub(percent(within48h), percent(within168h)),
     };
   }
   return {
     level: "none",
-    headline: allCalm ? "暂无信号，无需特别关注" : "信号平静，持续监测中",
-    sub: `未来 48 小时概率 ${percent(within48h)}，依据历史基线估算，近期无异常信号。`,
+    headline: allCalm ? t.verdict.none.headlineCalm : t.verdict.none.headline,
+    sub: t.verdict.none.sub(percent(within48h)),
   };
 }
 
-const activityMeta: Record<ActivityStatus, { label: string; note: string }> = {
-  active: { label: "活跃", note: "30 分钟内有公开活动" },
-  cooling: { label: "降温", note: "公开活动正在减少" },
-  quiet: { label: "安静", note: "近期没有新公开动态" },
-  data_delayed: { label: "数据延迟", note: "采集暂时无法确认" },
-};
-
-export function getActivityPresentation(activity: {
-  status: ActivityStatus;
-  likelySleeping?: boolean;
-  sleepWindowUtc?: { sampleSize: number } | null;
-}): { label: string; note: string } {
+export function getActivityPresentation(
+  activity: {
+    status: ActivityStatus;
+    likelySleeping?: boolean;
+    sleepWindowUtc?: { sampleSize: number } | null;
+  },
+  t: Strings = dictionaries.zh,
+): { label: string; note: string } {
   if (activity.status === "quiet" && activity.likelySleeping) {
     const sampleSize = activity.sleepWindowUtc?.sampleSize;
     return {
-      label: "可能在睡觉",
-      note: sampleSize
-        ? `按近 30 天 ${sampleSize} 条公开动态推测，当前处于低活跃时段`
-        : "按历史公开活动时段推测，当前可能正在休息",
+      label: t.sleep.label,
+      note: sampleSize ? t.sleep.note(sampleSize) : t.sleep.noteFallback,
     };
   }
-  return activityMeta[activity.status];
+  return t.activity[activity.status];
 }
 
-const reasonLabels: Record<string, string> = {
-  recent_activity: "近期活动",
-  cadence_0_24h: "Reset 后 24 小时冷却期",
-  cadence_24_48h: "距上次 Reset 1–2 天",
-  cadence_48_72h: "距上次 Reset 2–3 天",
-  cadence_3_4d: "接近平均 Reset 间隔",
-  cadence_4_7d: "已超过平均 Reset 间隔",
-  cadence_7d_plus: "距上次 Reset 已超过 7 天",
-  post_activity_high: "发帖量高于平时",
-  post_activity_normal: "发帖量接近平时",
-  post_activity_low: "发帖量低于平时",
-  post_activity_baseline_unavailable: "发帖历史不足，未作修正",
-  circadian_sleep: "当前处于常规睡眠时段",
-  circadian_awake: "当前处于常规清醒时段",
-  circadian_social: "当前处于晚间活跃时段",
-  circadian_winding_down: "当前可能准备休息",
-  active_activity: "近期公开活动",
-  cooling_activity: "活动热度下降",
-  quiet_activity: "低活动基线",
-  data_delayed_activity: "数据延迟",
-  rules_none: "没有明确 Reset 信号",
-  rules_future: "未来 Reset 承诺",
-  rules_rolling_out_now: "Reset 正在进行",
-  rules_completed: "Reset 已完成语义",
-  rules_limited: "有限范围 Reset",
-  rules_retracted: "Reset 撤回语义",
-  rules_ambiguous: "Reset 语义不确定",
-  rules_reset_mention: "Reset 相关表述",
-  rules_milestone: "里程碑进展",
-  rules_incident: "故障信号",
-  rules_incident_and_milestone: "事件与里程碑信号",
-  source_not_authoritative: "来源非权威",
-  source_not_first_party_statement: "不是第一方表述",
-  banked_reset_ignored: "储备 Reset 已忽略",
-  banked_reset_forecast_only: "储备 Reset 仅用于预测",
-  authoritative_retraction: "权威撤回声明",
-  retraction_requires_deterministic_evidence: "撤回证据仍需确认",
-  no_completed_reset_claim: "没有已完成 Reset 声明",
-  future_or_uncertain_language: "未来或不确定表述",
-  completion_requires_deterministic_evidence: "完成证据仍需确认",
-  authoritative_completed_reset: "权威完成声明",
-};
-
-function reasonLabel(reason: string): string {
-  return reasonLabels[reason] ?? "其他信号";
+function reasonLabel(reason: string, t: Strings): string {
+  return t.reasons[reason] ?? t.reasonFallback;
 }
 
 // 根据 topReasonCodes 生成一句自然语言信号依据
@@ -202,6 +164,7 @@ function buildSignalSentence(
   topReasons: [string, number][],
   activityStatus: ActivityStatus,
   eventCount: number,
+  t: Strings,
 ): string {
   const hasSignal = topReasons.some(([r]) =>
     [
@@ -217,14 +180,12 @@ function buildSignalSentence(
     const labels = topReasons
       .filter(([r]) => r !== `${activityStatus}_activity`)
       .slice(0, 2)
-      .map(([r]) => reasonLabel(r));
-    return `检测到相关信号：${labels.join("、")}。参考了近 24 小时 ${eventCount} 条公开动态。`;
+      .map(([r]) => reasonLabel(r, t));
+    return t.signals.detected(labels.join(t === dictionaries.zh ? "、" : ", "), eventCount);
   }
-  if (activityStatus === "active")
-    return `Tibo 近期活跃，暂无明确 Reset 相关表述，当前依据历史周期估算。`;
-  if (activityStatus === "cooling")
-    return `Tibo 近期活动减少，暂无 Reset 信号，当前依据历史周期估算。`;
-  return `Tibo 近期无新公开动态，当前完全依据历史基线估算，无可靠信号参考。`;
+  if (activityStatus === "active") return t.signals.active;
+  if (activityStatus === "cooling") return t.signals.cooling;
+  return t.signals.quiet;
 }
 
 const skeletonKeys = ["day-1", "day-2", "day-3", "day-4", "day-5", "day-6", "day-7"];
@@ -240,15 +201,15 @@ function precisePercent(value: number): string {
     : `${Math.round(percentage)}%`;
 }
 
-function probabilityLabel(value: number): string {
-  if (value >= 0.35) return "较高";
-  if (value >= 0.2) return "中等";
-  if (value >= 0.06) return "较低";
-  return "很低";
+function probabilityLabel(value: number, t: Strings): string {
+  if (value >= 0.35) return t.probability.high;
+  if (value >= 0.2) return t.probability.medium;
+  if (value >= 0.06) return t.probability.low;
+  return t.probability.veryLow;
 }
 
-function dateTime(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+function dateTime(value: string, timezone: string, locale = "zh-CN"): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     month: "short",
     day: "numeric",
@@ -258,17 +219,17 @@ function dateTime(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
-function timeRange(startAt: string, endAt: string, timezone: string): string {
+function timeRange(startAt: string, endAt: string, timezone: string, locale = "zh-CN"): string {
   const start = new Date(startAt);
   const end = new Date(endAt);
   const sameLocalDay = localDay(start, timezone) === localDay(end, timezone);
   return sameLocalDay
-    ? `${dateTime(startAt, timezone)}–${clockTime(endAt, timezone)}`
-    : `${dateTime(startAt, timezone)}–${dateTime(endAt, timezone)}`;
+    ? `${dateTime(startAt, timezone, locale)}–${clockTime(endAt, timezone, locale)}`
+    : `${dateTime(startAt, timezone, locale)}–${dateTime(endAt, timezone, locale)}`;
 }
 
-function clockTime(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+function clockTime(value: string, timezone: string, locale = "zh-CN"): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
@@ -276,15 +237,15 @@ function clockTime(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
-function weekday(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+function weekday(value: string, timezone: string, locale = "zh-CN"): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     weekday: "short",
   }).format(new Date(value));
 }
 
-function shortDate(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+function shortDate(value: string, timezone: string, locale = "zh-CN"): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     month: "numeric",
     day: "numeric",
@@ -304,12 +265,12 @@ function daysSince(value: string): number {
   return Math.floor((Date.now() - new Date(value).getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function relativeTime(value: string | null): string {
-  if (!value) return "暂无";
+function relativeTime(value: string | null, t: Strings): string {
+  if (!value) return t.relative.none;
   const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return `${seconds} 秒前`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
-  return `${Math.floor(seconds / 3600)} 小时前`;
+  if (seconds < 60) return t.relative.seconds(seconds);
+  if (seconds < 3600) return t.relative.minutes(Math.floor(seconds / 60));
+  return t.relative.hours(Math.floor(seconds / 3600));
 }
 
 function Skeleton() {
@@ -326,22 +287,36 @@ function Skeleton() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({ message, onRetry, t }: { message: string; onRetry: () => void; t: Strings }) {
   return (
     <main id="main-content" className="radar-shell state-page">
       <AlertTriangle size={28} />
-      <h1>雷达暂时离线</h1>
+      <h1>{t.error.title}</h1>
       <p>{message}</p>
       <button className="command-button" type="button" onClick={onRetry}>
-        <RefreshCw size={16} /> 重新连接
+        <RefreshCw size={16} /> {t.error.retry}
       </button>
     </main>
   );
 }
 
-function EventRow({ event, timezone }: { event: SourcePostObserved; timezone: string }) {
+function EventRow({
+  event,
+  timezone,
+  t,
+  locale,
+}: {
+  event: SourcePostObserved;
+  timezone: string;
+  t: Strings;
+  locale: string;
+}) {
   const label =
-    event.sourceKind === "reply" ? "回复" : event.sourceKind === "quote" ? "引用" : "帖子";
+    event.sourceKind === "reply"
+      ? t.events.reply
+      : event.sourceKind === "quote"
+        ? t.events.quote
+        : t.events.post;
   return (
     <article className="event-row">
       <div className="event-avatar" aria-hidden="true">
@@ -352,7 +327,7 @@ function EventRow({ event, timezone }: { event: SourcePostObserved; timezone: st
           <strong>{event.authorDisplayName ?? "Tibo"}</strong>
           <span>@{event.authorHandle ?? "tibo"}</span>
           <span>{label}</span>
-          <time dateTime={event.createdAt}>{dateTime(event.createdAt, timezone)}</time>
+          <time dateTime={event.createdAt}>{dateTime(event.createdAt, timezone, locale)}</time>
         </div>
         <p>{event.text}</p>
       </div>
@@ -361,8 +336,8 @@ function EventRow({ event, timezone }: { event: SourcePostObserved; timezone: st
         href={event.sourceUrl}
         target="_blank"
         rel="noreferrer"
-        aria-label="在 X 查看原帖"
-        title="在 X 查看"
+        aria-label={t.events.openOnX}
+        title={t.events.openTitle}
       >
         <ExternalLink size={17} />
       </a>
@@ -380,6 +355,14 @@ export function App() {
   const [eventsOpen, setEventsOpen] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [lang, setLang] = useState<Lang>(detectLang);
+  const t = dictionaries[lang];
+  const locale = localeFor(lang);
+
+  useEffect(() => {
+    rememberLang(lang);
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  }, [lang]);
 
   const refresh = useCallback(async () => {
     const controller = new AbortController();
@@ -389,17 +372,13 @@ export function App() {
       setData(await loadRadar(timezone, controller.signal));
     } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-        setError(
-          caught instanceof RadarApiError
-            ? caught.message
-            : "无法连接到 Radar API。请检查服务后重试。",
-        );
+        setError(caught instanceof RadarApiError ? caught.message : t.error.offline);
       }
     } finally {
       setRefreshing(false);
     }
     return () => controller.abort();
-  }, [timezone]);
+  }, [timezone, t]);
 
   useEffect(() => {
     void refresh();
@@ -435,34 +414,38 @@ export function App() {
     setShareFeedback(null);
     const payload = {
       title: "Tibo Reset Radar",
-      text: `未来 24 小时 Reset 概率 ${percent(forecast.cumulative.within24h)}，未来 48 小时 ${percent(forecast.cumulative.within48h)}，未来 7 天 ${percent(forecast.cumulative.within168h)}`,
+      text: t.shareText(
+        percent(forecast.cumulative.within24h),
+        percent(forecast.cumulative.within48h),
+        percent(forecast.cumulative.within168h),
+      ),
       url: window.location.href,
     };
     try {
       if (navigator.share) {
         await navigator.share(payload);
-        setShareFeedback("分享成功");
+        setShareFeedback(t.shareFeedback.shared);
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(window.location.href);
-        setShareFeedback("链接已复制");
+        setShareFeedback(t.shareFeedback.copied);
       } else {
         throw new Error("share is unavailable");
       }
       track("share_forecast", { probability: Math.round(forecast.cumulative.within168h * 100) });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        setShareFeedback("已取消分享");
+        setShareFeedback(t.shareFeedback.cancelled);
       } else {
-        setShareFeedback("分享失败，请稍后重试");
+        setShareFeedback(t.shareFeedback.failed);
       }
     }
   }
 
   if (!data && !error) return <Skeleton />;
-  if (!data && error) return <ErrorState message={error} onRetry={() => void refresh()} />;
+  if (!data && error) return <ErrorState message={error} onRetry={() => void refresh()} t={t} />;
   if (!data || !forecast) return null;
 
-  const activity = getActivityPresentation(data.status.activity);
+  const activity = getActivityPresentation(data.status.activity, t);
   const resetState = data.reset.state;
   const verdict = getVerdict(
     resetState,
@@ -470,22 +453,24 @@ export function App() {
     forecast.cumulative.within48h,
     forecast.cumulative.within24h,
     allCalm,
+    t,
   );
   const signalSentence = buildSignalSentence(
     topReasons,
     data.status.activity.status,
     data.events.items.length,
+    t,
   );
   const identity = data.events.items.find((item) => item.authorHandle || item.authorDisplayName);
   const displayName = identity?.authorDisplayName ?? "Tibo";
   const handle = identity?.authorHandle ?? "thsottiaux";
-  const routine = getRoutinePresentation(currentTime, data.status.activity.lastPublicActivityAt);
+  const routine = getRoutinePresentation(currentTime, data.status.activity.lastPublicActivityAt, t);
   const freshnessLabel =
     forecast.dataFreshness.status === "fresh"
-      ? "数据正常"
+      ? t.freshness.fresh
       : forecast.dataFreshness.status === "delayed"
-        ? "数据延迟"
-        : "数据陈旧";
+        ? t.freshness.delayed
+        : t.freshness.stale;
   const firstDay = forecast.days[0];
   const firstDayPeak = firstDay
     ? Math.max(...firstDay.buckets.map((bucket) => bucket.intervalProbability))
@@ -504,7 +489,7 @@ export function App() {
             <span aria-hidden="true">T</span>
             <img
               src={TIBO_AVATAR_URL}
-              alt="Tibo 头像"
+              alt={t.avatarAlt}
               referrerPolicy="no-referrer"
               onError={(event) => {
                 event.currentTarget.hidden = true;
@@ -513,18 +498,15 @@ export function App() {
           </div>
           <div>
             <span className="edition">
-              {data.status.demoMode ? "DEMO DATA · " : ""}NEXT RESET OUTLOOK
+              {data.status.demoMode ? t.edition.demo : ""}
+              {t.edition.outlook}
             </span>
             <h1>Tibo Reset Radar</h1>
             <div className="identity-line">
               <span className="identity-person">
                 {displayName} · @{handle}
               </span>
-              <span
-                className="routine-chip"
-                data-phase={routine.phase}
-                title="根据 Tibo 的常规作息推测；近期公开活动优先"
-              >
+              <span className="routine-chip" data-phase={routine.phase} title={t.routineTitle}>
                 {routine.phase === "sleeping" || routine.phase === "winding_down" ? (
                   <Moon size={14} aria-hidden="true" />
                 ) : routine.phase === "social" ? (
@@ -533,27 +515,41 @@ export function App() {
                   <Sun size={14} aria-hidden="true" />
                 )}
                 <strong>{routine.label}</strong>
-                <span>旧金山 {routine.localTime}</span>
+                <span>{t.routine.localTime(routine.localTime)}</span>
               </span>
               <span className="last-reset-inline">
-                <span>上次 Reset</span>
+                <span>{t.lastReset.label}</span>
                 {data.reset.event?.occurredAt ? (
                   <>
-                    <strong>{daysSince(data.reset.event.occurredAt)} 天前</strong>
+                    <strong>{t.lastReset.daysAgo(daysSince(data.reset.event.occurredAt))}</strong>
                     <time dateTime={data.reset.event.occurredAt}>
-                      {dateTime(data.reset.event.occurredAt, timezone)}
+                      {dateTime(data.reset.event.occurredAt, timezone, locale)}
                     </time>
                   </>
                 ) : (
-                  <strong>暂无已确认记录</strong>
+                  <strong>{t.lastReset.none}</strong>
                 )}
               </span>
             </div>
           </div>
         </div>
         <div className="masthead-actions">
+          <label className="timezone-control lang-control">
+            <span>{t.langLabel}</span>
+            <select
+              value={lang}
+              onChange={(event) => setLang(event.target.value as Lang)}
+              aria-label={t.langLabel}
+            >
+              {LANGS.map((item) => (
+                <option value={item} key={item}>
+                  {dictionaries[item].langName}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="timezone-control">
-            <span>时区</span>
+            <span>{t.actions.timezone}</span>
             <select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
               {[timezone, ...TIMEZONES.filter((item) => item !== timezone)].map((item) => (
                 <option value={item} key={item}>
@@ -566,8 +562,8 @@ export function App() {
             className="icon-button"
             type="button"
             onClick={() => void refresh()}
-            aria-label="刷新雷达"
-            title="刷新"
+            aria-label={t.actions.refresh}
+            title={t.actions.refreshTitle}
             disabled={refreshing}
           >
             {refreshing ? <LoaderCircle className="spin" size={18} /> : <RefreshCw size={18} />}
@@ -576,8 +572,8 @@ export function App() {
             className="icon-button"
             type="button"
             onClick={() => void share()}
-            aria-label="分享预测"
-            title="分享"
+            aria-label={t.actions.share}
+            title={t.actions.shareTitle}
           >
             <Share2 size={18} />
           </button>
@@ -586,7 +582,7 @@ export function App() {
             href="https://github.com/RZX00/tibo-reset-radar"
             target="_blank"
             rel="noreferrer"
-            aria-label="查看 GitHub 仓库"
+            aria-label={t.actions.github}
             title="GitHub"
             onClick={() => track("github_click")}
           >
@@ -601,15 +597,13 @@ export function App() {
         </p>
       ) : null}
 
-      {data.status.demoMode ? (
-        <div className="demo-band">演示数据 · 真实 Tibo 身份与运行凭据尚未配置</div>
-      ) : null}
+      {data.status.demoMode ? <div className="demo-band">{t.demoBand}</div> : null}
 
       {/* ── 区域一：主结论 ── */}
       <section
         className="verdict-hero"
         data-level={verdict.level}
-        aria-label="当前 Reset 可能性评估"
+        aria-label={t.verdictAria}
         aria-live="polite"
       >
         <div className="verdict-icon">
@@ -626,18 +620,16 @@ export function App() {
             <summary className="current-state">
               <span className="status-dot" data-status={data.status.activity.status} />
               <span>
-                当前公开状态：<strong>{activity.label}</strong>
+                {t.currentState("")}
+                <strong>{activity.label}</strong>
               </span>
               <Info className="state-info-icon" size={13} aria-hidden="true" />
             </summary>
             <div className="state-explanation-panel">
-              <strong>公开状态说明</strong>
+              <strong>{t.stateExplainer}</strong>
               <ul>
                 {(
-                  Object.entries(activityMeta) as [
-                    ActivityStatus,
-                    (typeof activityMeta)[ActivityStatus],
-                  ][]
+                  Object.entries(t.activity) as [ActivityStatus, { label: string; note: string }][]
                 ).map(([status, meta]) => (
                   <li key={status} data-current={status === data.status.activity.status}>
                     <span className="status-dot" data-status={status} />
@@ -653,25 +645,36 @@ export function App() {
           <p className="verdict-headline">{verdict.headline}</p>
           <p className="verdict-sub">{verdict.sub}</p>
         </div>
-        <section className="headline-probabilities" aria-label="核心预测概率">
+        <section className="headline-probabilities" aria-label={t.headline.aria}>
           <figure
-            aria-label={`未来 24 小时发生重置的概率 ${percent(forecast.cumulative.within24h)}`}
+            aria-label={t.headline.figureAria(
+              t.headline.within24h,
+              percent(forecast.cumulative.within24h),
+            )}
           >
-            <span>未来 24 小时</span>
+            <span>{t.headline.within24h}</span>
             <strong>{percent(forecast.cumulative.within24h)}</strong>
-            <small>发生 Reset 的概率</small>
+            <small>{t.headline.caption}</small>
           </figure>
           <figure
-            aria-label={`未来 48 小时发生重置的概率 ${percent(forecast.cumulative.within48h)}`}
+            aria-label={t.headline.figureAria(
+              t.headline.within48h,
+              percent(forecast.cumulative.within48h),
+            )}
           >
-            <span>未来 48 小时</span>
+            <span>{t.headline.within48h}</span>
             <strong>{percent(forecast.cumulative.within48h)}</strong>
-            <small>发生 Reset 的概率</small>
+            <small>{t.headline.caption}</small>
           </figure>
-          <figure aria-label={`未来 7 天发生重置的概率 ${percent(forecast.cumulative.within168h)}`}>
-            <span>未来 7 天</span>
+          <figure
+            aria-label={t.headline.figureAria(
+              t.headline.within168h,
+              percent(forecast.cumulative.within168h),
+            )}
+          >
+            <span>{t.headline.within168h}</span>
             <strong>{percent(forecast.cumulative.within168h)}</strong>
-            <small>发生 Reset 的概率</small>
+            <small>{t.headline.caption}</small>
           </figure>
         </section>
       </section>
@@ -680,24 +683,24 @@ export function App() {
       <section className="weather-forecast" aria-labelledby="weather-heading">
         <div className="weather-heading">
           <div>
-            <h2 id="weather-heading">未来 7 天</h2>
-            <p>每一行表示下一次 Reset 落在该连续 24 小时窗口的概率。</p>
+            <h2 id="weather-heading">{t.weather.heading}</h2>
+            <p>{t.weather.note}</p>
           </div>
           {peakDayIndex >= 0 ? (
             <p className="peak-day-note">
-              最高窗口：第 {peakDayIndex + 1} 天 · {percent(peakDayProbability)}
+              {t.weather.peak(peakDayIndex + 1, percent(peakDayProbability))}
             </p>
           ) : null}
         </div>
 
         {firstDay ? (
-          <section className="today-forecast" aria-label="未来 24 小时分时预测">
+          <section className="today-forecast" aria-label={t.weather.todayAria}>
             <div className="today-summary">
               <div>
-                <span>未来 24 小时分时概率</span>
+                <span>{t.weather.todaySummary}</span>
                 <strong>{percent(forecast.cumulative.within24h)}</strong>
               </div>
-              <p>四个连续 6 小时时间段</p>
+              <p>{t.weather.todayBuckets}</p>
             </div>
             <div className="hourly-strip">
               {firstDay.buckets.map((bucket) => (
@@ -705,48 +708,55 @@ export function App() {
                   className="hourly-window"
                   data-peak={bucket.intervalProbability === firstDayPeak}
                   key={bucket.index}
-                  aria-label={`${clockTime(bucket.startAt, timezone)}–${clockTime(bucket.endAt, timezone)}，区间概率 ${precisePercent(bucket.intervalProbability)}`}
+                  aria-label={t.weather.bucketAria(
+                    `${clockTime(bucket.startAt, timezone, locale)}–${clockTime(bucket.endAt, timezone, locale)}`,
+                    precisePercent(bucket.intervalProbability),
+                  )}
                 >
                   <span className="hourly-range">
-                    {clockTime(bucket.startAt, timezone)}–{clockTime(bucket.endAt, timezone)}
+                    {clockTime(bucket.startAt, timezone, locale)}–
+                    {clockTime(bucket.endAt, timezone, locale)}
                   </span>
                   <strong>{precisePercent(bucket.intervalProbability)}</strong>
-                  <small>{probabilityLabel(bucket.intervalProbability)}</small>
+                  <small>{probabilityLabel(bucket.intervalProbability, t)}</small>
                 </article>
               ))}
             </div>
           </section>
         ) : null}
 
-        <ol className="daily-list" aria-label="未来七天区间概率">
+        <ol className="daily-list" aria-label={t.weather.dailyAria}>
           {forecast.days.map((item, index) => {
             return (
               <li
                 className="daily-row"
                 data-peak={index === peakDayIndex}
                 key={item.dayIndex}
-                aria-label={`第 ${item.dayIndex} 天，${timeRange(item.startAt, item.endAt, timezone)}，区间概率 ${percent(item.intervalProbability)}`}
+                aria-label={t.weather.dayAria(
+                  item.dayIndex,
+                  timeRange(item.startAt, item.endAt, timezone, locale),
+                  percent(item.intervalProbability),
+                )}
               >
                 <div className="daily-date">
-                  <strong>{index === 0 ? "未来 24h" : weekday(item.startAt, timezone)}</strong>
-                  <span>{shortDate(item.startAt, timezone)}</span>
+                  <strong>
+                    {index === 0 ? t.weather.firstDay : weekday(item.startAt, timezone, locale)}
+                  </strong>
+                  <span>{shortDate(item.startAt, timezone, locale)}</span>
                 </div>
                 <strong className="daily-probability">{percent(item.intervalProbability)}</strong>
                 <div className="daily-signal">
-                  <span>{probabilityLabel(item.intervalProbability)}</span>
+                  <span>{probabilityLabel(item.intervalProbability, t)}</span>
                 </div>
               </li>
             );
           })}
         </ol>
-        <p className="window-disclaimer">
-          当前 API 按连续 24
-          小时切分；待新模型提供自然日口径后，这里将直接显示周三、周四等完整日概率。
-        </p>
+        <p className="window-disclaimer">{t.weather.disclaimer}</p>
       </section>
 
       {/* ── 区域四：信号依据 ── */}
-      <section className="signal-summary" aria-label="预测依据">
+      <section className="signal-summary" aria-label={t.signals.aria}>
         <p className="signal-sentence">{signalSentence}</p>
         <button
           className="events-toggle"
@@ -755,8 +765,8 @@ export function App() {
           aria-expanded={eventsOpen}
         >
           <span>
-            <strong>查看近 24 小时原始推文</strong>
-            <small>{data.events.items.length} 条公开动态</small>
+            <strong>{t.signals.toggle}</strong>
+            <small>{t.signals.count(data.events.items.length)}</small>
           </span>
           <ChevronDown size={18} data-open={eventsOpen} />
         </button>
@@ -765,10 +775,16 @@ export function App() {
             <div>
               {data.events.items.length ? (
                 data.events.items.map((event) => (
-                  <EventRow key={event.postId} event={event} timezone={timezone} />
+                  <EventRow
+                    key={event.postId}
+                    event={event}
+                    timezone={timezone}
+                    t={t}
+                    locale={locale}
+                  />
                 ))
               ) : (
-                <p className="empty-events">当前窗口没有新公开动态。</p>
+                <p className="empty-events">{t.signals.empty}</p>
               )}
             </div>
           ) : null}
@@ -777,14 +793,26 @@ export function App() {
 
       <footer className="footer-line">
         <div className="footer-notes">
-          <p>{forecast.disclaimer}</p>
+          <p>{t.footer.disclaimer}</p>
           <p className="data-footnote">
             <span className="status-dot" data-status={forecast.dataFreshness.status} />
-            {freshnessLabel} · 更新于 {relativeTime(forecast.dataFreshness.lastObservedAt)} ·
-            数据来自公开动态
+            {freshnessLabel} ·{" "}
+            {t.footer.updated(relativeTime(forecast.dataFreshness.lastObservedAt, t))} ·{" "}
+            {t.footer.source}
           </p>
         </div>
-        <span>Open-source experiment by ewo</span>
+        <span className="footer-brand">
+          {t.footer.experiment}{" "}
+          <a
+            className="ewo-wordmark"
+            href="https://ewo.so"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => track("ewo_click")}
+          >
+            ewo
+          </a>
+        </span>
       </footer>
     </main>
   );

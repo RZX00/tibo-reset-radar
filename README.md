@@ -77,6 +77,14 @@ node tools/local-collector/collect.mjs
 Add `RADAR_DRY_RUN=true` to print the payload instead of sending it. Re-sending the same posts is
 harmless; the inbox is keyed by post id.
 
+## Language
+
+The page ships Chinese and English. A visitor whose browser prefers Chinese lands on the Chinese
+page, everyone else on the English one, and the switch in the masthead is remembered per browser.
+Every visible string lives in [`apps/web/src/i18n.ts`](apps/web/src/i18n.ts) behind one typed
+`Strings` interface, so an untranslated string is a type error rather than a Chinese sentence on the
+English page. Dates, weekdays and clock times follow the chosen language; the numbers never change.
+
 ## Verification
 
 ```bash

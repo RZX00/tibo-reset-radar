@@ -171,7 +171,7 @@
           <div class="box"><h3>活动状态</h3><pre>collector failures >= 2 -> data_delayed
 last activity <= 30m   -> active
 30m < age <= 3h        -> cooling
-age > 3h / none        -> quiet</pre></div>
+age > 3h / none        -> quiet</pre><p><strong>2026-08-05 口径变更：</strong>首发设计写的是「不展示未经本人说明的『睡觉中』」。产品决定改口径——<code>quiet</code> 且采集新鲜、且近 30 天有 ≥20 条公开动态时，另取最安静的连续 8 小时 UTC 窗口，页面标注 <code>可能在睡觉</code>。这是<strong>基于公开发帖时段的展示层推断</strong>，会写明样本量，不参与概率计算，也不声称是对本人真实状态的断言。</p></div>
           <div class="box"><h3>确认状态</h3><pre>forecasting
   -> candidate_confirmation
   -> confirmed_reset
