@@ -1274,20 +1274,20 @@ h2 {
   gap: 6px;
   white-space: nowrap;
 }
-/* Wordmark, not an image: it stays crisp at any size and needs no asset pipeline. */
-.ewo-wordmark {
-  font-family: "Newsreader Variable", Georgia, serif;
-  font-size: 1.05rem;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  text-decoration: none;
-  border-bottom: 1.5px solid var(--ink);
-  padding-bottom: 1px;
-  line-height: 1;
+/* The brand lockup is vector, so it stays crisp anywhere; the page is paper-light, so the
+   light-mode file is the correct one and needs no recolouring. */
+.ewo-logo {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
 }
-.ewo-wordmark:hover,
-.ewo-wordmark:focus-visible {
+.ewo-logo img {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+.ewo-logo:hover img,
+.ewo-logo:focus-visible img {
   opacity: 0.72;
 }
 .lang-control select {

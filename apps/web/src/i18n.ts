@@ -90,6 +90,7 @@ export interface Strings {
     source: string;
     disclaimer: string;
     experiment: string;
+    brandLink: string;
   };
   relative: {
     none: string;
@@ -317,6 +318,7 @@ const zh: Strings = {
     source: "数据来自公开动态",
     disclaimer: "启发式预测不代表 Reset 已确认；模型概率最高为 99%。",
     experiment: "开源实验项目",
+    brandLink: "访问 ewo",
   },
   relative: {
     none: "暂无",
@@ -465,6 +467,7 @@ const en: Strings = {
     source: "built from public posts",
     disclaimer: "A heuristic forecast is not a confirmed reset; the model never exceeds 99%.",
     experiment: "Open-source experiment by",
+    brandLink: "Visit ewo",
   },
   relative: {
     none: "never",

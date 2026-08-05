@@ -250,4 +250,13 @@ describe("App", () => {
     // The choice survives a reload.
     expect(window.localStorage.getItem("radar-lang")).toBe("zh");
   });
+
+  it("puts the ewo logo in the footer, pointing at the API site", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+
+    const brand = screen.getByRole("link", { name: dictionaries.zh.footer.brandLink });
+    expect(brand).toHaveAttribute("href", "https://api.ewo.so");
+    expect(brand.querySelector("img")).toHaveAttribute("src", "/brand/ewo-lockup.svg");
+  });
 });

@@ -804,13 +804,14 @@ export function App() {
         <span className="footer-brand">
           {t.footer.experiment}{" "}
           <a
-            className="ewo-wordmark"
-            href="https://ewo.so"
+            className="ewo-logo"
+            href="https://api.ewo.so"
             target="_blank"
             rel="noreferrer"
+            aria-label={t.footer.brandLink}
             onClick={() => track("ewo_click")}
           >
-            ewo
+            <img src="/brand/ewo-lockup.svg" alt="ewo" width="72" height="24" />
           </a>
         </span>
       </footer>
