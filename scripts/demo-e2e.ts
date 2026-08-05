@@ -230,7 +230,11 @@ try {
   ]);
   assert.equal(status.statusCode, 200);
   assert.equal(forecast.statusCode, 200);
-  assert.equal(forecast.json().model.version, "heuristic-v1", "v2 must remain shadow-only");
+  assert.equal(
+    forecast.json().model.version,
+    "cadence-activity-circadian-v1",
+    "v2 must remain shadow-only",
+  );
   assert.ok(Array.isArray(events.json().items));
   assert.equal(reset.json().state, "retracted");
   assert.equal(reset.json().event.supersedesEventId, confirmedEventId);

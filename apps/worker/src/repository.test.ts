@@ -76,6 +76,43 @@ describe("forecast signal time semantics", () => {
   });
 });
 
+describe("forecast cadence and activity context", () => {
+  it("counts the rolling 24-hour activity against a complete prior 14-day baseline", async () => {
+    const generatedMs = Date.parse(GENERATED_AT);
+    const baselineStart = new Date(generatedMs - 15 * 24 * 60 * 60 * 1_000).toISOString();
+    await addPost("coverage-marker", baselineStart, "post");
+    for (let dayOffset = 2; dayOffset <= 15; dayOffset += 1) {
+      for (const hour of [1, 8, 16]) {
+        await addPost(
+          `baseline-${dayOffset}-${hour}`,
+          new Date(
+            generatedMs - dayOffset * 24 * 60 * 60 * 1_000 + hour * 60 * 60 * 1_000,
+          ).toISOString(),
+          hour === 8 ? "reply" : "post",
+        );
+      }
+    }
+    for (let hoursAgo = 1; hoursAgo <= 6; hoursAgo += 1) {
+      await addPost(
+        `recent-${hoursAgo}`,
+        new Date(generatedMs - hoursAgo * 60 * 60 * 1_000).toISOString(),
+        hoursAgo % 2 === 0 ? "reply" : "post",
+      );
+    }
+    await addPost("recent-repost", "2026-08-03T23:30:00.000Z", "repost");
+    await addReset("latest-reset", "2026-08-03T12:00:00.000Z");
+
+    const context = await repository.getForecastContext(GENERATED_AT);
+
+    expect(context.latestResetAt).toBe("2026-08-03T12:00:00.000Z");
+    expect(context.activityMetrics).toEqual({
+      recent24hPostCount: 6,
+      baselineDailyPostAverage: 3,
+      baselineWindowComplete: true,
+    });
+  });
+});
+
 async function addSignal(input: {
   postId: string;
   createdAt: string;
@@ -132,5 +169,18 @@ async function addReset(eventId: string, occurredAt: string): Promise<void> {
        supersedes_event_id, created_at, updated_at
      ) VALUES ($1, 'confirmed_reset', $2, 'unknown', '[]', $3, NULL, $2, $2)`,
     [eventId, occurredAt, `fingerprint-${eventId}`],
+  );
+}
+
+async function addPost(
+  postId: string,
+  createdAt: string,
+  sourceKind: "post" | "reply" | "repost",
+): Promise<void> {
+  await db.query(
+    `INSERT INTO source_posts (
+       post_id, author_id, source_kind, source_url, content_hash, created_at, observed_at
+     ) VALUES ($1, 'author', $2, $3, $4, $5, $5)`,
+    [postId, sourceKind, `https://x.com/author/status/${postId}`, `hash-${postId}`, createdAt],
   );
 }

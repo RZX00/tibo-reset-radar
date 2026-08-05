@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App.js";
+import { App, getActivityPresentation, getRoutinePresentation } from "./App.js";
 
 const forecast = {
   schemaVersion: "1.0",
@@ -51,6 +51,45 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("maps the agreed San Francisco routine and lets recent activity override sleep", () => {
+    expect(getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), null)).toMatchObject({
+      phase: "sleeping",
+      label: "大概率睡觉",
+      localTime: "01:00",
+    });
+    expect(getRoutinePresentation(new Date("2026-08-06T05:15:00.000Z"), null)).toMatchObject({
+      phase: "social",
+      label: "通常在刷推",
+      localTime: "22:15",
+    });
+    expect(getRoutinePresentation(new Date("2026-08-05T16:30:00.000Z"), null)).toMatchObject({
+      phase: "awake",
+      label: "大概率醒着",
+      localTime: "09:30",
+    });
+    expect(getRoutinePresentation(new Date("2026-08-06T06:45:00.000Z"), null)).toMatchObject({
+      phase: "winding_down",
+      label: "可能准备休息",
+      localTime: "23:45",
+    });
+    expect(
+      getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), "2026-08-05T07:50:00.000Z"),
+    ).toMatchObject({ phase: "awake", label: "醒着 · 刚刚有公开活动" });
+  });
+
+  it("labels a quiet low-activity window as a sleep inference, not a fact", () => {
+    expect(
+      getActivityPresentation({
+        status: "quiet",
+        likelySleeping: true,
+        sleepWindowUtc: { sampleSize: 20 },
+      }),
+    ).toEqual({
+      label: "可能在睡觉",
+      note: "按近 30 天 20 条公开动态推测，当前处于低活跃时段",
+    });
+  });
+
   it("renders the radar and expands recent activity", async () => {
     vi.stubGlobal(
       "fetch",
@@ -78,7 +117,7 @@ describe("App", () => {
                       authorId: "u1",
                       authorDisplayName: "Tibo",
                       authorHandle: "tibo",
-                      authorAvatarUrl: null,
+                      authorAvatarUrl: "https://example.com/tibo.jpg",
                       sourceKind: "reply",
                       conversationId: null,
                       referencedPostIds: [],
@@ -107,14 +146,35 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("Reset signal update")).toBeInTheDocument());
   });
 
-  it("reports successful sharing and renders mapped reason labels", async () => {
+  it("shows the identity and three headline probabilities, then reports successful sharing", async () => {
     const share = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "share", { configurable: true, value: share });
 
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /7 天详细预测数据/ }));
-    expect(screen.getAllByText("Reset 撤回语义").length).toBeGreaterThan(0);
+    expect(screen.getByRole("img", { name: "Tibo 头像" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("pj1vyX6I_400x400.jpg"),
+    );
+    expect(
+      screen.getByText("上次 Reset", { exact: true }).closest(".last-reset-inline"),
+    ).toHaveTextContent("上次 Reset");
+    expect(document.querySelector(".last-reset-bar")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("figure", { name: "未来 24 小时发生重置的概率 20%" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("figure", { name: "未来 48 小时发生重置的概率 40%" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("figure", { name: "未来 7 天发生重置的概率 70%" })).toBeInTheDocument();
+    expect(screen.queryByText("Tibo 当前状态")).not.toBeInTheDocument();
+    expect(screen.getByText(/数据正常 · 更新于/)).toHaveTextContent("数据来自公开动态");
+
+    await userEvent.click(screen.getByText(/当前公开状态：/));
+    expect(screen.getByText("30 分钟内有公开活动")).toBeInTheDocument();
+    expect(screen.getByText("公开活动正在减少")).toBeInTheDocument();
+    expect(screen.getByText("近期没有新公开动态")).toBeInTheDocument();
+    expect(screen.getByText("采集暂时无法确认")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "分享预测" }));
     expect(await screen.findByRole("status")).toHaveTextContent("分享成功");
@@ -137,33 +197,29 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
     // Pin the timezone so the expected labels do not depend on the machine running the test.
     await userEvent.selectOptions(screen.getByLabelText("时区"), "UTC");
-    // The six-hour cards live behind the detail toggle since the redesign.
-    await userEvent.click(screen.getByRole("button", { name: /7 天详细预测数据/ }));
-
-    // Buckets are 6 hours: 08:00 UTC -> 14:00 UTC on the same local day.
-    expect(screen.getAllByText("8月3日 08:00–14:00").length).toBeGreaterThan(0);
-    // The headline window must be a range too, never a single instant.
-    expect(screen.getByText(/预期时段：8月\d+日 \d{2}:\d{2}–/)).toBeInTheDocument();
-    // A window that crosses midnight repeats the closing date so it cannot read backwards.
-    expect(screen.getByText("8月3日 20:00–8月4日 02:00")).toBeInTheDocument();
-    expect(screen.getByText(/每格是该 6 小时区间内发生的概率/)).toBeInTheDocument();
-
-    const bar = screen.getAllByRole("progressbar")[0];
-    expect(bar).toHaveAttribute("aria-label", "8月3日 08:00–14:00 区间概率");
     expect(
-      screen.getByRole("button", { name: /^DAY 1 8月3日 08:00–8月4日 08:00 区间概率/ }),
+      screen.getByRole("listitem", {
+        name: "第 1 天，8月3日 08:00–8月4日 08:00，区间概率 10%",
+      }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "未来七天区间概率" }).children).toHaveLength(7);
+    expect(document.querySelector(".hourly-meter")).not.toBeInTheDocument();
+    expect(document.querySelector(".daily-track")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^累计 /)).not.toBeInTheDocument();
+    expect(screen.getByText("四个连续 6 小时时间段")).toBeInTheDocument();
   });
 
   it("formats both endpoints in the selected timezone", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /7 天详细预测数据/ }));
     await userEvent.selectOptions(screen.getByLabelText("时区"), "America/Los_Angeles");
-    // 08:00Z–14:00Z is 01:00–07:00 in Los Angeles on the same local day.
     await waitFor(() =>
-      expect(screen.getAllByText("8月3日 01:00–07:00").length).toBeGreaterThan(0),
+      expect(
+        screen.getByRole("listitem", {
+          name: "第 1 天，8月3日 01:00–8月4日 01:00，区间概率 10%",
+        }),
+      ).toBeInTheDocument(),
     );
   });
 });

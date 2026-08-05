@@ -192,9 +192,9 @@ age > 3h / none        -> quiet</pre></div>
       </section>
 
       <section id="model">
-        <div class="section-head"><div><span class="kicker">Model card</span><h2>heuristic-v1 与 survival-v2 影子模型</h2></div><div class="number">06</div></div>
+        <div class="section-head"><div><span class="kicker">Model card</span><h2>cadence-activity-v1 与 survival-v2 影子模型</h2></div><div class="number">06</div></div>
         <div class="grid-2">
-          <div class="box"><h3>公共 V1</h3><ul><li>展示未来 168 小时相对风险窗口。</li><li>输入仅为已持久化的公开活动与结构化信号。</li><li>权重是启发式，不声明已校准；不替代权威确认。</li></ul></div>
+          <div class="box"><h3>公共 V1</h3><ul><li>展示未来 24 小时、48 小时与 7 天发生 Reset 的概率。</li><li>概率只使用距上次确认 Reset 的时间，以及最近 24 小时发帖量相对前 14 个完整日的变化；不读取文案含义，不使用随机数。</li><li>权重是启发式，不声明已校准；不替代权威确认。</li></ul></div>
           <div class="box"><h3>V2 影子边界</h3><ul><li>按 6 小时离散生存模型计算历史频率与作息。</li><li>只把 <code>all/unknown</code> 的有效确认作为主 Reset，撤回按更正关系排除。</li><li>少于 20 次确认标记 <code>insufficient_history</code>；外部/文本系数保持为零，未回测不得进入公共 API。</li></ul></div>
         </div>
         <pre>RADAR_DB_PATH=... pnpm model:backtest

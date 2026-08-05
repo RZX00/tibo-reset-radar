@@ -10,6 +10,16 @@ import {
 } from "@tibo-radar/contracts";
 import { parseJsonColumn, type RadarDatabase } from "@tibo-radar/db";
 
+const ACTIVITY_HISTORY_DAYS = 30;
+const MIN_SLEEP_SAMPLE_SIZE = 20;
+const SLEEP_WINDOW_HOURS = 8;
+
+export interface InferredSleepWindowUtc {
+  startHour: number;
+  endHour: number;
+  sampleSize: number;
+}
+
 export interface RadarReadStore {
   getStatus(): Promise<RadarStatus>;
   getLatestForecast(): Promise<ForecastSnapshot | null>;
@@ -38,35 +48,65 @@ export class SqliteRadarReadStore implements RadarReadStore {
   }
 
   async getStatus(): Promise<RadarStatus> {
-    const result = await this.#db.query<{
-      consecutive_failures: number;
-      last_success_at: string | null;
-      last_public_activity_at: string | null;
-    }>(
-      `SELECT
+    const now = this.#now();
+    const activityHistoryStart = new Date(
+      now.getTime() - ACTIVITY_HISTORY_DAYS * 24 * 60 * 60_000,
+    ).toISOString();
+    const [result, hourlyResult] = await Promise.all([
+      this.#db.query<{
+        consecutive_failures: number;
+        last_success_at: string | null;
+        last_public_activity_at: string | null;
+      }>(
+        `SELECT
          COALESCE((SELECT MAX(consecutive_failures) FROM collector_cursors), 0) AS consecutive_failures,
          (SELECT MAX(last_success_at) FROM collector_cursors) AS last_success_at,
          (SELECT MAX(created_at) FROM source_posts WHERE deleted_at IS NULL) AS last_public_activity_at`,
-    );
+      ),
+      this.#db.query<{ utc_hour: number; post_count: number }>(
+        `SELECT CAST(strftime('%H', created_at) AS INTEGER) AS utc_hour, COUNT(*) AS post_count
+         FROM source_posts
+         WHERE deleted_at IS NULL AND source_kind != 'repost'
+           AND created_at >= $1 AND created_at <= $2
+         GROUP BY utc_hour ORDER BY utc_hour ASC`,
+        [activityHistoryStart, now.toISOString()],
+      ),
+    ]);
     const row = result.rows[0];
     const failures = row?.consecutive_failures ?? 0;
     const lastSuccessAt = toDate(row?.last_success_at ?? null);
     const lastActivityAt = toDate(row?.last_public_activity_at ?? null);
     const lagMs = lastSuccessAt
-      ? this.#now().getTime() - lastSuccessAt.getTime()
+      ? now.getTime() - lastSuccessAt.getTime()
       : Number.POSITIVE_INFINITY;
+    const collectorStatus =
+      lagMs <= 10 * 60_000 ? "fresh" : lagMs <= 30 * 60_000 ? "delayed" : "stale";
+    const observedActivityStatus = activityStatus(lastActivityAt, failures, now);
+    const hourlyCounts = Array.from({ length: 24 }, () => 0);
+    for (const item of hourlyResult.rows) {
+      if (item.utc_hour >= 0 && item.utc_hour < 24) hourlyCounts[item.utc_hour] = item.post_count;
+    }
+    const sleepWindowUtc = inferSleepWindowUtc(hourlyCounts);
+    const likelySleeping = Boolean(
+      observedActivityStatus === "quiet" &&
+        collectorStatus === "fresh" &&
+        sleepWindowUtc &&
+        isHourInWindow(now.getUTCHours(), sleepWindowUtc),
+    );
 
     return {
       serviceVersion: this.#serviceVersion,
       demoMode: this.#demoMode,
       collector: {
-        status: lagMs <= 10 * 60_000 ? "fresh" : lagMs <= 30 * 60_000 ? "delayed" : "stale",
+        status: collectorStatus,
         lastSuccessAt: lastSuccessAt?.toISOString() ?? null,
         consecutiveFailures: failures,
       },
       activity: {
-        status: activityStatus(lastActivityAt, failures, this.#now()),
+        status: observedActivityStatus,
         lastPublicActivityAt: lastActivityAt?.toISOString() ?? null,
+        likelySleeping,
+        sleepWindowUtc,
       },
     };
   }
@@ -168,6 +208,38 @@ export function activityStatus(
   if (ageMs <= 30 * 60_000) return "active";
   if (ageMs <= 3 * 60 * 60_000) return "cooling";
   return "quiet";
+}
+
+export function inferSleepWindowUtc(
+  hourlyCounts: readonly number[],
+): InferredSleepWindowUtc | null {
+  if (hourlyCounts.length !== 24) throw new Error("hourlyCounts must contain 24 UTC hours");
+  const sampleSize = hourlyCounts.reduce((sum, count) => sum + Math.max(0, count), 0);
+  if (sampleSize < MIN_SLEEP_SAMPLE_SIZE) return null;
+  let bestStart = 0;
+  let bestCount = Number.POSITIVE_INFINITY;
+  for (let startHour = 0; startHour < 24; startHour += 1) {
+    let count = 0;
+    for (let offset = 0; offset < SLEEP_WINDOW_HOURS; offset += 1) {
+      count += Math.max(0, hourlyCounts[(startHour + offset) % 24] ?? 0);
+    }
+    if (count < bestCount) {
+      bestCount = count;
+      bestStart = startHour;
+    }
+  }
+  return {
+    startHour: bestStart,
+    endHour: (bestStart + SLEEP_WINDOW_HOURS) % 24,
+    sampleSize,
+  };
+}
+
+export function isHourInWindow(hour: number, window: InferredSleepWindowUtc): boolean {
+  if (window.startHour < window.endHour) {
+    return hour >= window.startHour && hour < window.endHour;
+  }
+  return hour >= window.startHour || hour < window.endHour;
 }
 
 function toDate(value: string | null): Date | null {

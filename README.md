@@ -3,7 +3,7 @@
 An open-source radar for public Tibo activity and the next Reset window.
 
 ```ascii
-X timeline -> signal extraction -> heuristic-v1 -> public single-page radar
+X timeline -> Reset confirmation + post counts -> cadence-activity-v1 -> public single-page radar
                          \-----> survival-v2 -> shadow snapshots/backtest only
 ```
 
@@ -95,8 +95,18 @@ independently as each one matures.
 
 V2 is deliberately isolated from `GET /api/forecast` and the page. It generates 28 contiguous
 six-hour survival buckets and stores both the point-in-time feature snapshot and result in
-`forecast_feature_snapshots` / `shadow_forecast_runs`. The current public model remains
-`heuristic-v1`; every V2 result carries `publicImpact: "none"`.
+`forecast_feature_snapshots` / `shadow_forecast_runs`. The current public model is
+`cadence-activity-v1`: it starts from a fixed cadence table centered on the observed roughly
+3.6-day mean Reset interval, then adjusts only for Tibo's rolling 24-hour post and reply count
+relative to the prior 14 complete days. Reposts are excluded, incomplete activity history applies
+no adjustment, text wording never changes probability, and no random value is used. Every V2
+result remains shadow-only with `publicImpact: "none"`.
+
+The public status keeps four observed states (`active`, `cooling`, `quiet`, `data_delayed`). When
+the collector is fresh, the observed state is `quiet`, and at least 20 non-repost posts exist in
+the trailing 30 days, the API also infers the quietest contiguous eight-hour UTC window. The page
+labels that window `可能在睡觉`; this is a display-only inference and never sets forecast risk to
+zero or changes the cadence/activity probability calculation.
 
 The outcome is narrowly defined as a confirmed primary Reset with scope `all` or `unknown`.
 `limited`, plan, region and cohort events do not count, and a later retraction removes the event
