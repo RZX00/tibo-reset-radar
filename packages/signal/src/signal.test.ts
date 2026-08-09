@@ -156,6 +156,77 @@ describe("confirmation engine", () => {
     });
   });
 
+  it("confirms an authoritative quote post when its own commentary announces a completed reset", () => {
+    const post = makePost(
+      `That's right, GPT-5.6 Sol is awesome and can be used pretty much anywhere, including in the CC harness.
+
+To celebrate this, together with the fact that I'm not going anywhere... I have reset usage limits for all paid users of ChatGPT Work and Codex.
+
+Have fun out there!`,
+      "quote",
+    );
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision).toMatchObject({
+      state: "confirmed_reset",
+      reasonCode: "authoritative_completed_reset",
+      event: {
+        status: "confirmed_reset",
+        occurredAt: post.createdAt,
+        evidencePostIds: [post.postId],
+      },
+    });
+  });
+
+  it("still rejects reposts because their text is not an original first-party statement", () => {
+    const post = makePost("I have reset usage limits for all paid users.", "repost");
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision).toMatchObject({
+      state: "forecasting",
+      event: null,
+      reasonCode: "source_not_first_party_statement",
+    });
+  });
+
+  it("does not confirm an authoritative quote without a completed reset claim", () => {
+    const post = makePost("This is worth reading.", "quote");
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision).toMatchObject({
+      state: "forecasting",
+      event: null,
+      reasonCode: "no_completed_reset_claim",
+    });
+  });
+
+  it("keeps uncertain quoted commentary out of confirmation", () => {
+    const post = makePost("Someone said the reset is complete, just a rumour.", "quote");
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision.state).not.toBe("confirmed_reset");
+  });
+
   it("keeps model-only completion as a candidate", () => {
     const post = makePost("Everything is ready for customers.");
     const decision = evaluateConfirmation({
@@ -213,14 +284,17 @@ describe("confirmation engine", () => {
   });
 });
 
-function makePost(text: string): SourcePostObserved {
+function makePost(
+  text: string,
+  sourceKind: SourcePostObserved["sourceKind"] = "post",
+): SourcePostObserved {
   return SourcePostObservedSchema.parse({
     postId: "post-1",
     authorId: "tibo-1",
     authorDisplayName: "Tibo",
     authorHandle: "tibo",
     authorAvatarUrl: null,
-    sourceKind: "post",
+    sourceKind,
     conversationId: null,
     referencedPostIds: [],
     language: "en",

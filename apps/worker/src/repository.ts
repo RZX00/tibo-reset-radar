@@ -167,6 +167,17 @@ export class SqliteWorkerRepository {
     return result.rows.map(mapPostRow);
   }
 
+  async getReplayablePost(postId: string): Promise<SourcePostObserved | null> {
+    const result = await this.db.query<SourcePostRow>(
+      `SELECT * FROM source_posts
+       WHERE post_id = $1 AND deleted_at IS NULL AND text_ephemeral IS NOT NULL
+       LIMIT 1`,
+      [postId],
+    );
+    const row = result.rows[0];
+    return row ? mapPostRow(row) : null;
+  }
+
   async readInbox(_sinceId: string | null, limit: number): Promise<unknown[]> {
     // Outstanding rows, not "newer than the cursor". A collector may push history at any time —
     // a since-id watermark would silently strand every backfilled post older than what it already
