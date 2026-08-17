@@ -67,42 +67,37 @@ async function useTimezone(target: string): Promise<void> {
 }
 
 describe("App", () => {
-  it("maps the agreed San Francisco routine and lets recent activity override sleep", () => {
-    expect(getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), null)).toMatchObject({
+  it("presents the routine phase supplied by the API instead of recalculating it", () => {
+    expect(
+      getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), "sleeping", "quiet"),
+    ).toMatchObject({
       phase: "sleeping",
       label: "大概率睡觉",
       localTime: "01:00",
     });
-    expect(getRoutinePresentation(new Date("2026-08-06T05:15:00.000Z"), null)).toMatchObject({
+    expect(
+      getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), "awake", "active"),
+    ).toMatchObject({ phase: "awake", label: "醒着 · 刚刚有公开活动", localTime: "01:00" });
+    expect(
+      getRoutinePresentation(new Date("2026-08-06T05:15:00.000Z"), "social", "quiet"),
+    ).toMatchObject({
       phase: "social",
       label: "通常在刷推",
       localTime: "22:15",
     });
-    expect(getRoutinePresentation(new Date("2026-08-05T16:30:00.000Z"), null)).toMatchObject({
-      phase: "awake",
-      label: "大概率醒着",
-      localTime: "09:30",
-    });
-    expect(getRoutinePresentation(new Date("2026-08-06T06:45:00.000Z"), null)).toMatchObject({
+    expect(
+      getRoutinePresentation(new Date("2026-08-06T06:45:00.000Z"), "winding_down", "quiet"),
+    ).toMatchObject({
       phase: "winding_down",
       label: "可能准备休息",
       localTime: "23:45",
     });
-    expect(
-      getRoutinePresentation(new Date("2026-08-05T08:00:00.000Z"), "2026-08-05T07:50:00.000Z"),
-    ).toMatchObject({ phase: "awake", label: "醒着 · 刚刚有公开活动" });
   });
 
-  it("labels a quiet low-activity window as a sleep inference, not a fact", () => {
-    expect(
-      getActivityPresentation({
-        status: "quiet",
-        likelySleeping: true,
-        sleepWindowUtc: { sampleSize: 20 },
-      }),
-    ).toEqual({
-      label: "可能在睡觉",
-      note: "按近 30 天 20 条公开动态推测，当前处于低活跃时段",
+  it("keeps public activity separate from the routine phase", () => {
+    expect(getActivityPresentation({ status: "quiet" })).toEqual({
+      label: "安静",
+      note: "近期没有新公开动态",
     });
   });
 
@@ -120,7 +115,7 @@ describe("App", () => {
                 lastSuccessAt: forecast.generatedAt,
                 consecutiveFailures: 0,
               },
-              activity: forecast.activity,
+              activity: { ...forecast.activity, routinePhase: "awake" },
             }
           : url.includes("/forecast")
             ? forecast

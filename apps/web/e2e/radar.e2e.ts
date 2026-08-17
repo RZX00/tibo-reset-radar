@@ -83,12 +83,16 @@ test("presents every probability as a time range", async ({ page }) => {
 });
 
 test("fits the narrowest phone without sideways scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
+  await expect(page.locator(".masthead")).toHaveCSS("border-bottom-width", "2px");
+  await expect(page.locator(".verdict-hero")).toHaveCSS("border-top-width", "0px");
+
   // The mobile project is 390px wide and passed while production overflowed at that same width,
   // because font metrics differ between environments. 360px is the common small-Android width and
   // leaves the margin that difference needs.
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Tibo Reset Radar" })).toBeVisible();
 
   const overflowing = await page.evaluate(() => {
     const viewport = document.documentElement.clientWidth;
@@ -162,7 +166,11 @@ async function mockRadarApi(page: Page): Promise<void> {
             lastSuccessAt: "2026-08-03T08:00:00.000Z",
             consecutiveFailures: 0,
           },
-          activity: { status: "active", lastPublicActivityAt: "2026-08-03T08:00:00.000Z" },
+          activity: {
+            status: "active",
+            lastPublicActivityAt: "2026-08-03T08:00:00.000Z",
+            routinePhase: "awake",
+          },
         },
       });
       return;

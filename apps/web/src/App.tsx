@@ -1,4 +1,9 @@
-import type { ActivityStatus, ForecastSnapshot, SourcePostObserved } from "@tibo-radar/contracts";
+import type {
+  ActivityStatus,
+  ForecastSnapshot,
+  RoutinePhase,
+  SourcePostObserved,
+} from "@tibo-radar/contracts";
 import {
   Activity,
   AlertTriangle,
@@ -56,7 +61,8 @@ export interface RoutinePresentation {
 
 export function getRoutinePresentation(
   now: Date,
-  lastPublicActivityAt: string | null,
+  phase: RoutinePhase,
+  activityStatus: ActivityStatus,
   t: Strings = dictionaries.zh,
 ): RoutinePresentation {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -68,20 +74,16 @@ export function getRoutinePresentation(
   const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
   const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
   const localTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-  const minuteOfDay = hour * 60 + minute;
-  const lastActivity = lastPublicActivityAt ? Date.parse(lastPublicActivityAt) : Number.NaN;
-  const activityAge = now.getTime() - lastActivity;
-
-  if (Number.isFinite(lastActivity) && activityAge >= 0 && activityAge <= 30 * 60_000) {
+  if (phase === "awake" && activityStatus === "active") {
     return { phase: "awake", label: t.routine.awakeRecent, localTime };
   }
-  if (minuteOfDay >= 30 && minuteOfDay < 9 * 60 + 30) {
+  if (phase === "sleeping") {
     return { phase: "sleeping", label: t.routine.sleeping, localTime };
   }
-  if (minuteOfDay >= 21 * 60 && minuteOfDay < 23 * 60 + 30) {
+  if (phase === "social") {
     return { phase: "social", label: t.routine.social, localTime };
   }
-  if (minuteOfDay >= 23 * 60 + 30 || minuteOfDay < 30) {
+  if (phase === "winding_down") {
     return { phase: "winding_down", label: t.routine.windingDown, localTime };
   }
   return { phase: "awake", label: t.routine.awake, localTime };
@@ -152,20 +154,9 @@ function getVerdict(
 }
 
 export function getActivityPresentation(
-  activity: {
-    status: ActivityStatus;
-    likelySleeping?: boolean;
-    sleepWindowUtc?: { sampleSize: number } | null;
-  },
+  activity: { status: ActivityStatus },
   t: Strings = dictionaries.zh,
 ): { label: string; note: string } {
-  if (activity.status === "quiet" && activity.likelySleeping) {
-    const sampleSize = activity.sleepWindowUtc?.sampleSize;
-    return {
-      label: t.sleep.label,
-      note: sampleSize ? t.sleep.note(sampleSize) : t.sleep.noteFallback,
-    };
-  }
   return t.activity[activity.status];
 }
 
@@ -451,7 +442,12 @@ export function App() {
   const identity = data.events.items.find((item) => item.authorHandle || item.authorDisplayName);
   const displayName = identity?.authorDisplayName ?? "Tibo";
   const handle = identity?.authorHandle ?? "thsottiaux";
-  const routine = getRoutinePresentation(currentTime, data.status.activity.lastPublicActivityAt, t);
+  const routine = getRoutinePresentation(
+    currentTime,
+    data.status.activity.routinePhase,
+    data.status.activity.status,
+    t,
+  );
   const freshnessLabel =
     forecast.dataFreshness.status === "fresh"
       ? t.freshness.fresh

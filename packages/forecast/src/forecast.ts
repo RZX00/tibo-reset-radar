@@ -1,7 +1,9 @@
 import {
   type ForecastSnapshot,
   ForecastSnapshotSchema,
+  getTiboRoutinePhase,
   type ResetEvent,
+  type RoutinePhase,
   type SignalExtraction,
 } from "@tibo-radar/contracts";
 
@@ -13,19 +15,10 @@ const MAX_FORECAST_PROBABILITY = 0.99;
 const ACTIVITY_ADJUSTMENT_PER_RATIO = 0.15;
 const MIN_ACTIVITY_ADJUSTMENT = -0.15;
 const MAX_ACTIVITY_ADJUSTMENT = 0.3;
-const TIBO_TIMEZONE = "America/Los_Angeles";
 const CIRCADIAN_SAMPLE_MINUTES = 30;
-const TIBO_CLOCK_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: TIBO_TIMEZONE,
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
-type CircadianPhase = "sleeping" | "awake" | "social" | "winding_down";
 
 const CIRCADIAN_PHASES: Record<
-  CircadianPhase,
+  RoutinePhase,
   {
     bucketWeight: number;
     probabilityFactors: readonly [number, number, number, number];
@@ -159,7 +152,11 @@ export function generateForecast(input: ForecastGenerationInput): ForecastSnapsh
   const elapsedHours = hoursSinceLastReset(input.lastResetAt, generatedMs);
   const baseline = cadenceBaseline(elapsedHours);
   const postingAdjusted = adjustForPostingActivity(baseline, input.activityMetrics);
-  const adjusted = adjustForCircadianPhase(postingAdjusted, generatedMs);
+  const adjusted = adjustForCircadianPhase(
+    postingAdjusted,
+    generatedMs,
+    input.activity.lastPublicActivityAt,
+  );
   const intervalProbabilities = distributeAcrossBuckets(adjusted, generatedMs);
 
   let cumulative = 0;
@@ -303,8 +300,9 @@ function adjustProbability(base: number, adjustment: number, maximum: number): n
 function adjustForCircadianPhase(
   probabilities: AdjustedProbabilities,
   generatedMs: number,
+  lastPublicActivityAt: string | null,
 ): AdjustedProbabilities {
-  const phase = circadianPhaseAt(generatedMs);
+  const phase = getTiboRoutinePhase(new Date(generatedMs), lastPublicActivityAt);
   const [factor24h, factor48h, factor72h, factor168h] = CIRCADIAN_PHASES[phase].probabilityFactors;
   const within24h = clamp(probabilities.within24h * factor24h, 0.01, 0.95);
   const within48h = Math.max(within24h, clamp(probabilities.within48h * factor48h, 0.01, 0.97));
@@ -355,20 +353,9 @@ function circadianBucketWeight(startMs: number): number {
   let total = 0;
   for (let index = 0; index < sampleCount; index += 1) {
     const sampleAt = startMs + (index + 0.5) * sampleMs;
-    total += CIRCADIAN_PHASES[circadianPhaseAt(sampleAt)].bucketWeight;
+    total += CIRCADIAN_PHASES[getTiboRoutinePhase(new Date(sampleAt), null)].bucketWeight;
   }
   return total / sampleCount;
-}
-
-function circadianPhaseAt(timestampMs: number): CircadianPhase {
-  const parts = TIBO_CLOCK_FORMATTER.formatToParts(new Date(timestampMs));
-  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
-  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
-  const minuteOfDay = hour * 60 + minute;
-  if (minuteOfDay >= 30 && minuteOfDay < 9 * 60 + 30) return "sleeping";
-  if (minuteOfDay >= 21 * 60 && minuteOfDay < 23 * 60 + 30) return "social";
-  if (minuteOfDay >= 23 * 60 + 30 || minuteOfDay < 30) return "winding_down";
-  return "awake";
 }
 
 function signalLevelFor(

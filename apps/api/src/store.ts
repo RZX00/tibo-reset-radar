@@ -2,6 +2,7 @@ import {
   type ActivityStatus,
   type ForecastSnapshot,
   ForecastSnapshotSchema,
+  getTiboRoutinePhase,
   type RadarStatus,
   type ResetEvent,
   ResetEventSchema,
@@ -82,17 +83,13 @@ export class SqliteRadarReadStore implements RadarReadStore {
     const collectorStatus =
       lagMs <= 10 * 60_000 ? "fresh" : lagMs <= 30 * 60_000 ? "delayed" : "stale";
     const observedActivityStatus = activityStatus(lastActivityAt, failures, now);
+    const routinePhase = getTiboRoutinePhase(now, lastActivityAt?.toISOString() ?? null);
     const hourlyCounts = Array.from({ length: 24 }, () => 0);
     for (const item of hourlyResult.rows) {
       if (item.utc_hour >= 0 && item.utc_hour < 24) hourlyCounts[item.utc_hour] = item.post_count;
     }
     const sleepWindowUtc = inferSleepWindowUtc(hourlyCounts);
-    const likelySleeping = Boolean(
-      observedActivityStatus === "quiet" &&
-        collectorStatus === "fresh" &&
-        sleepWindowUtc &&
-        isHourInWindow(now.getUTCHours(), sleepWindowUtc),
-    );
+    const likelySleeping = routinePhase === "sleeping";
 
     return {
       serviceVersion: this.#serviceVersion,
@@ -105,6 +102,7 @@ export class SqliteRadarReadStore implements RadarReadStore {
       activity: {
         status: observedActivityStatus,
         lastPublicActivityAt: lastActivityAt?.toISOString() ?? null,
+        routinePhase,
         likelySleeping,
         sleepWindowUtc,
       },

@@ -115,6 +115,22 @@ describe("forecast probability properties", () => {
     expect(sleeping.days[0]?.buckets[0]?.topReasonCodes).toContain("circadian_sleep");
   });
 
+  it("lets recent public activity override the current sleep adjustment", () => {
+    const sleeping = generateForecast(
+      makeInput({ generatedAt: "2026-08-05T08:00:00.000Z", lastResetHoursAgo: 96 }),
+    );
+    const recentlyActive = generateForecast(
+      makeInput({
+        generatedAt: "2026-08-05T08:00:00.000Z",
+        lastPublicActivityAt: "2026-08-05T07:50:00.000Z",
+        lastResetHoursAgo: 96,
+      }),
+    );
+
+    expect(recentlyActive.cumulative.within24h).toBeGreaterThan(sleeping.cumulative.within24h);
+    expect(recentlyActive.days[0]?.buckets[0]?.topReasonCodes).toContain("circadian_awake");
+  });
+
   it("ignores post wording and falls back to cadence when the activity baseline is incomplete", () => {
     const withoutSignal = generateForecast(makeInput({ signals: [] }));
     const withStrongSignal = generateForecast(
@@ -213,6 +229,7 @@ function makeInput(
     generatedAt?: string;
     signals?: PersistedForecastSignal[];
     activityStatus?: ForecastGenerationInput["activity"]["status"];
+    lastPublicActivityAt?: string | null;
     freshnessStatus?: ForecastGenerationInput["dataFreshness"]["status"];
     lastResetHoursAgo?: number;
     recent24hPostCount?: number;
@@ -228,7 +245,10 @@ function makeInput(
     modelVersion: "cadence-activity-v1",
     activity: {
       status: options.activityStatus ?? "cooling",
-      lastPublicActivityAt: "2026-08-02T23:00:00.000Z",
+      lastPublicActivityAt:
+        options.lastPublicActivityAt === undefined
+          ? "2026-08-02T23:00:00.000Z"
+          : options.lastPublicActivityAt,
     },
     dataFreshness: {
       status: freshnessStatus,
