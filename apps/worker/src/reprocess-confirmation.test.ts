@@ -54,7 +54,7 @@ Have fun out there!`,
       eventId: `reset-${MISSED_POST_ID}`,
       occurredAt: CREATED_AT,
     });
-    const context = await repository.getForecastContext("2026-08-10T00:00:00.000Z");
+    const context = await repository.getForecastContext(new Date().toISOString());
     expect(context.latestResetAt).toBe(CREATED_AT);
     expect(context.confirmedSignal?.eventId).toBe(`reset-${MISSED_POST_ID}`);
 
