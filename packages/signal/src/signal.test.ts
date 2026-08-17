@@ -115,6 +115,34 @@ describe("deterministic signal rules", () => {
     expect(extractSignalWithRules(text, REFERENCE_TIME).explicitResetState).toBe(expected);
   });
 
+  it.each([
+    ["Reset button pressed, should see it in a bit.", "completed"],
+    ["I have allowed Codex to reset its own rate limits across all plans.", "completed"],
+    ["We did a sneaky double reset. You also get one banked reset.", "completed"],
+    ["We are once again resetting the usage limits for all.", "rolling_out_now"],
+    [
+      "Introducing another usage limit reset. Should land over the next 30 minutes.",
+      "rolling_out_now",
+    ],
+    ["Enjoy a full reset of your usage limits. Propagating in the next hour.", "rolling_out_now"],
+    ["New day, new usage reset for paid users. Lands in the next hour.", "rolling_out_now"],
+    ["Rate limit reset incoming.", "future"],
+    ["We will be reseting rate limits in a bit.", "future"],
+    ["And yet, I don't see a reset button there.", "ambiguous"],
+    ["One day we created the reset button and the rest is history.", "none"],
+  ] as const)("classifies a historical Tibo phrasing: %s", (text, expected) => {
+    expect(extractSignalWithRules(text, REFERENCE_TIME).explicitResetState).toBe(expected);
+  });
+
+  it("does not mistake all paid plans for a limited rollout", () => {
+    expect(
+      extractSignalWithRules(
+        "Codex usage limits have now been reset across all paid plans.",
+        REFERENCE_TIME,
+      ),
+    ).toMatchObject({ explicitResetState: "completed", scope: "all" });
+  });
+
   it("does not turn a negated statement into confirmation evidence", () => {
     const result = extractSignalWithRules("We are not going to reset.", REFERENCE_TIME);
     expect(result.explicitResetState).toBe("ambiguous");
@@ -210,6 +238,35 @@ describe("confirmation engine", () => {
       state: "forecasting",
       reasonCode: "banked_reset_forecast_only",
     });
+  });
+
+  it("confirms an immediate reset even when the same announcement also grants a banked reset", () => {
+    const post = makePost(
+      "We did a sneaky double reset. You get a full reset now and one banked reset for later.",
+    );
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision.state).toBe("confirmed_reset");
+    expect(decision.event?.occurredAt).toBe(post.createdAt);
+  });
+
+  it("confirms an active reset while preserving a later reset promise as future context", () => {
+    const post = makePost(
+      "We are resetting rate limits so you can keep building, and we'll reset them again tomorrow.",
+    );
+    const decision = evaluateConfirmation({
+      post,
+      extraction: extractSignalWithRules(post.text, REFERENCE_TIME),
+      authoritativeUserIds: [post.authorId],
+      bankedResetPolicy: "forecast_only",
+    });
+
+    expect(decision.state).toBe("confirmed_reset");
   });
 });
 
