@@ -182,6 +182,28 @@ A tagged release publishes one immutable image to GHCR. Production deployment an
 `deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and `main`
 image tags are rejected. Rolling back only changes the image — the SQLite file is untouched.
 
+### Reprocess one missed confirmation
+
+When a post was already extracted under an older confirmation policy, the normal pending queue will
+not evaluate it again. After deploying a policy fix, reprocess that stored post explicitly against
+the current deterministic rules and target authority configuration:
+
+```bash
+pnpm signal:reprocess -- 2086188036493344823
+```
+
+Against the SQLite volume in the production container, run the same compiled entrypoint:
+
+```bash
+docker compose --env-file deploy/.env.production -f deploy/compose.production.yml \
+  exec radar node apps/worker/dist/reprocess-main.js 2086188036493344823
+```
+
+The command only accepts a numeric X post id, refuses deleted posts or posts whose retained text has
+already been removed, and fails without writing when the current rules do not produce a confirmed
+Reset or retraction. A successful run upserts the auditable Reset event; the next worker cycle
+regenerates the forecast.
+
 ### Retention
 
 The worker writes a forecast snapshot every cycle, so the collector prunes hourly instead of

@@ -64,7 +64,10 @@ export function evaluateConfirmation(input: ConfirmationInput): ConfirmationDeci
   if (!input.authoritativeUserIds.includes(post.authorId)) {
     return decision("forecasting", "source_not_authoritative", null, extraction);
   }
-  if (post.sourceKind === "quote" || post.sourceKind === "repost") {
+  // X quote posts retain the authoritative author's own commentary in `post.text`; the quoted
+  // post is represented separately by `referencedPostIds`. Reposts, by contrast, are not an
+  // original first-party statement and must stay ineligible for confirmation.
+  if (post.sourceKind === "repost") {
     return decision("forecasting", "source_not_first_party_statement", null, extraction);
   }
 
