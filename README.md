@@ -1,228 +1,134 @@
 # Tibo Reset Radar
 
-An open-source radar for public Tibo activity and the next Reset window.
+给 Codex 用户：按 Tibo 的 X 公开动态，估算额度 24 小时、48 小时、7 天内 Reset 的概率。
 
-```ascii
-X timeline -> Reset confirmation + post counts -> cadence-activity-v1 -> public single-page radar
-                         \-----> survival-v2 -> shadow snapshots/backtest only
-```
+<p align="center">
+  <img src="./docs/assets/banner.jpg" alt="Tibo Reset Radar 头图：复古天气预报牌，标题下方是周一到周日七列、每列四个时段的概率柱状格，周三中午一格用橙色闪电高亮" width="100%" />
+</p>
 
-The forecast never uses `100%`. A confirmed Reset is a separate, evidence-backed state.
+## 🔍 实际效果
 
-## Quick Start
+![本地演示数据下的雷达页面（中文）：顶部标明演示数据；中间是未来 24 小时 13%、48 小时 38%、7 天 78% 的 Reset 概率；下方是未来 24 小时分段和未来 7 天每天的概率格](./docs/assets/screenshot-demo-zh.png)
 
-Requirements: Node.js 24, pnpm 10.4, Docker, and Docker Compose.
+上图是本仓库在本地 Docker 里跑出来的页面（2026-10-20）。**数据是演示数据**：追踪账号是 `tibo_demo`，帖子是仓库自带的 3 条示例，不是真实 Tibo 的帖子。
+
+- **Tibo**：X 账号 [@thsottiaux](https://x.com/thsottiaux)，会在 X 上公开宣布 Reset（见 [`config/target.live.example.json`](./config/target.live.example.json)）。
+- **Reset**：Codex 与 ChatGPT Work 付费用户用量额度的一次公开重置。只有 @thsottiaux、@OpenAI、@OpenAIDevs、@embirico 发帖说「已发生」或「已开始推出」才算已确认；对未来 Reset 的承诺只当预测信号。
+
+## 📌 状态与限制
+
+- **状态**：实验项目；最近一次提交 2026-08-17，最新 tag 是 v0.4.4，没有 GitHub Release。〔待核：是否仍在维护〕
+- **适用范围**：只追踪一个 X 账号、一类事件。概率是按历史间隔、近期发帖量和作息算的启发式估算，没有经过校准，最高 99%，不是承诺。
+- **默认是演示模式**：页面顶部会标「演示数据」。接入真实数据要自己提供 X API 的 Bearer Token，或用本地采集器推送，见 [接入真实数据](./docs/going-live.md)。
+- **依赖与平台**：Docker 和 Docker Compose；本地开发另需 Node.js 24、pnpm 10.4。CI 在 Ubuntu 上跑；2026-10-20 在 Windows 11 + Docker Desktop 上实测通过，macOS 未测。
+- **数据去向**：状态存在本机一个 SQLite 文件里。真实模式只调用 X 官方 API，可选接 OpenAI 兼容的 LLM 接口提取信号（不配就用内置规则）。没有登录、支付、订阅、邮件和 webhook。
+
+## 📦 快速开始
+
+三条命令，首次构建要拉取 Node 镜像并安装依赖：
 
 ```bash
+git clone https://github.com/RZX00/tibo-reset-radar.git && cd tibo-reset-radar
 cp .env.example .env
-pnpm install --frozen-lockfile
 docker compose up -d --build
 ```
 
-Open `http://127.0.0.1:4173`. The checked-in target and page are visibly marked as Demo data.
+打开 <http://127.0.0.1:4173>。端口被占用或被系统保留时，改 `docker-compose.yml` 里的 `127.0.0.1:4173:8787`。停止并清理：`docker compose down -v`。
 
-One container runs everything: it migrates the schema on boot, serves the API and the built page
-from the same origin, and runs the collector loop in-process. State is a single SQLite file
-(`/data/radar.db` in the container, `RADAR_DB_PATH` elsewhere) — there is no database server to
-run, back up, or scale, which is the right shape for one page reading one public timeline.
+一个容器包办一切：启动时迁移数据库，从同一个地址提供 API 和页面，并在进程内跑采集循环。
 
-For process-level development run `pnpm db:migrate` once, then `pnpm dev:api` and `pnpm dev:web` in
-separate terminals; `pnpm dev:worker` is only needed if you set `RADAR_RUN_WORKER=false` and want
-the collector separate. Entrypoints load the ignored root `.env` automatically.
+## 🚀 第一次使用
 
-## Going live
-
-`config/target.json` stays in demo mode in this repository; CI fails if it does not. The live
-identity lives in [`config/target.live.example.json`](config/target.live.example.json): the tracked
-account is the public X account that announces the resets (`@thsottiaux`, numeric ID
-`1953337039510003712`), and the authoritative accounts that can confirm one are that account plus
-`@OpenAI`, `@OpenAIDevs`, and `@embirico`. `banked_reset` stays `forecast_only` on purpose — a
-banked reset raises the forecast but must not claim that anyone's limit has already been restored.
-
-A deployment mounts its own target file, so switching modes is host state rather than a rebuild:
+打开页面后，在终端查看当前状态：
 
 ```bash
-cp config/target.live.example.json deploy/target.live.json   # untracked on the host
-# deploy/.env.production
-RADAR_TARGET_CONFIG_FILE=./target.live.json
-DEMO_MODE=false
-X_BEARER_TOKEN=...        # required by the live collector
-LLM_BASE_URL=...          # optional; without it, extraction uses the deterministic fallback
-LLM_API_KEY=...
-LLM_MODEL=...
+curl -s http://127.0.0.1:4173/api/reset-status
 ```
-
-Credentials belong only in the ignored environment file. Both the target mode and `DEMO_MODE` are
-deliberate, separate switches: the first decides where posts come from, the second decides whether
-the page still labels itself as demonstration data.
-
-### Collecting from somewhere else
-
-A deployment does not have to fetch X itself. With `RADAR_COLLECTOR_MODE=inbox` the API exposes one
-authenticated write route, `POST /api/ingest/posts`, and the worker drains what lands there through
-the same dedup, extraction and forecast path as any other source. The route only exists when
-`RADAR_INGEST_TOKEN` is set, and every pushed post must satisfy the observed-post contract.
-
-That keeps the X session on the machine that owns it — usually a personal one — instead of copying
-it onto a server. [`tools/local-collector/collect.mjs`](tools/local-collector/collect.mjs) is a
-dependency-free reference collector: it runs an X client you already have, keeps only posts whose
-author id matches the target, and pushes them.
-
-```bash
-X_TARGET_HANDLE=thsottiaux X_TARGET_USER_ID=1953337039510003712 \
-RADAR_INGEST_URL=https://example.com/api/ingest/posts RADAR_INGEST_TOKEN=... \
-node tools/local-collector/collect.mjs
-```
-
-Add `RADAR_DRY_RUN=true` to print the payload instead of sending it. Re-sending the same posts is
-harmless; the inbox is keyed by post id.
-
-## Language
-
-The page ships Chinese and English. A visitor whose browser prefers Chinese lands on the Chinese
-page, everyone else on the English one, and the switch in the masthead is remembered per browser.
-Every visible string lives in [`apps/web/src/i18n.ts`](apps/web/src/i18n.ts) behind one typed
-`Strings` interface, so an untranslated string is a type error rather than a Chinese sentence on the
-English page. Dates, weekdays and clock times follow the chosen language; the numbers never change.
-
-## Verification
-
-```bash
-pnpm check
-pnpm test:integration
-pnpm model:backtest
-pnpm model:backtest:v2
-```
-
-The integration test runs against a real SQLite database and proves collect -> edit/delete ->
-extract -> V1/V2 shadow forecast -> API/PNG, including that pushed history lands regardless of push
-order. The V1 backtest waits for the full 168-hour horizon; V2 evaluates 24/72/168-hour horizons
-independently as each one matures.
-
-## Forecast V2 shadow strategy
-
-V2 is deliberately isolated from `GET /api/forecast` and the page. It generates 28 contiguous
-six-hour survival buckets and stores both the point-in-time feature snapshot and result in
-`forecast_feature_snapshots` / `shadow_forecast_runs`. The current public model is
-`cadence-activity-v1`: it starts from a fixed cadence table centered on the observed roughly
-3.6-day mean Reset interval, then adjusts only for Tibo's rolling 24-hour post and reply count
-relative to the prior 14 complete days. Reposts are excluded, incomplete activity history applies
-no adjustment, text wording never changes probability, and no random value is used. Every V2
-result remains shadow-only with `publicImpact: "none"`.
-
-The public status keeps four observed states (`active`, `cooling`, `quiet`, `data_delayed`). When
-the collector is fresh, the observed state is `quiet`, and at least 20 non-repost posts exist in
-the trailing 30 days, the API also infers the quietest contiguous eight-hour UTC window. The page
-labels that window `可能在睡觉`; this is a display-only inference and never sets forecast risk to
-zero or changes the cadence/activity probability calculation.
-
-The outcome is narrowly defined as a confirmed primary Reset with scope `all` or `unknown`.
-`limited`, plan, region and cohort events do not count, and a later retraction removes the event
-through its correction link while leaving both audit records intact. Every feature is computed
-as-of the forecast time, so a correction or external event learned later cannot leak into an
-earlier snapshot.
-
-V2 currently records these feature families:
-
-- historical reset intervals, quantiles, right-censored exposure and smoothed duration hazards;
-- Tibo's own 90-day UTC posting/reply rhythm as a non-zero, normalized circadian multiplier;
-- six/24-hour post and reply bursts plus unique conversations, without collecting public replies
-  from other users;
-- time-decayed reset wording, incidents and milestones from the existing signal extractor;
-- optional OpenAI incidents from the public official status feed and operator-imported competitor
-  releases that link to an official source.
-
-Until there are at least 20 effective confirmed resets, maturity is
-`insufficient_history`. At 20 or more it is still `shadow`: contextual coefficients remain exactly
-zero unless a version has been written to `forecast_model_versions` with a backtested status.
-Competitor releases therefore cannot change probability merely because they were collected.
-Calibration is only representable from 50 effective resets onward. No code path currently trains
-or promotes a model automatically.
-
-Enable the unauthenticated official OpenAI status collector explicitly:
-
-```dotenv
-FORECAST_V2_OPENAI_STATUS_ENABLED=true
-FORECAST_V2_OPENAI_STATUS_TIMEOUT_MS=10000
-```
-
-For a competitor release, import an operator-reviewed JSON file; `knownAt` must be when this radar
-first learned the event, not a backdated publication timestamp:
 
 ```json
-[
-  {
-    "eventId": "anthropic:official-release:example",
-    "sourceType": "official_release",
-    "provider": "Anthropic",
-    "eventType": "model_release",
-    "title": "Official release title",
-    "sourceUrl": "https://www.anthropic.com/news/example",
-    "occurredAt": "2026-08-03T00:00:00.000Z",
-    "knownAt": "2026-08-03T00:05:00.000Z",
-    "endedAt": null,
-    "relevance": 0.8,
-    "severity": 0.7,
-    "metadata": {}
-  }
-]
+{"state":"forecasting","event":null}
 ```
+
+再看预测（数值随时间变化，下面是节选）：
 
 ```bash
-pnpm external:import-releases -- ./official-releases.json
+curl -s http://127.0.0.1:4173/api/forecast
 ```
 
-Grok and full public-comment collection are intentionally absent. The lower-cost interaction proxy
-is Tibo's own reply rate and conversation spread; this is auditable and does not require estimating
-the sentiment or pressure of an unbounded audience.
+```text
+{"schemaVersion":"1.0", ... ,"model":{"version":"cadence-activity-circadian-v1","validationStatus":"heuristic",...},
+ ... ,"cumulative":{"within24h":0.13,"within48h":0.3825,"within72h":0.4680000000000001,"within168h":0.776},"days":[ ... ]}
+```
 
-## Operations
+### 同一个页面，两种帖子，两种结果
 
-A tagged release publishes one immutable image to GHCR. Production deployment and rollback use
-`deploy/compose.production.yml`, `deploy/deploy.sh`, and `deploy/rollback.sh`; `latest` and `main`
-image tags are rejected. Rolling back only changes the image — the SQLite file is untouched.
+下表是在本地 Docker 里实际跑出来的。第一行是演示模式自带的帖子；第二行用推送收件箱投喂了一条演示帖，复现步骤见 [`docs/try-confirmation.md`](./docs/try-confirmation.md)。
 
-### Reprocess one missed confirmation
+| 演示账号发的帖子 | `/api/reset-status` 返回 | 页面 |
+|---|---|---|
+| `The next usage reset is planned for tomorrow if the rollout stays healthy.`（承诺未来） | `{"state":"forecasting","event":null}` | 仍显示概率，没有「已确认」 |
+| `Usage limits have been reset for all paid users. The reset is complete.`（宣布已发生） | `{"state":"confirmed_reset","event":{"eventId":"reset-2001", ... ,"scope":"all","evidencePostIds":["2001"]}}` | 显示「Reset 已确认」，24 小时概率回落到冷却期基线 8% |
 
-When a post was already extracted under an older confirmation policy, the normal pending queue will
-not evaluate it again. After deploying a policy fix, reprocess that stored post explicitly against
-the current deterministic rules and target authority configuration:
+![确认后的页面（中文，演示数据）：状态为「Reset 已确认」，上次 Reset 为 0 天前，未来 24 小时 8%、48 小时 30%、7 天 75%](./docs/assets/screenshot-demo-confirmed-zh.png)
+
+## 🆚 和自己盯着时间线比，差在哪
+
+| | 自己盯 Tibo 的时间线 | 本雷达 |
+|---|---|---|
+| 「快了」的依据 | 印象 | 距上次已确认 Reset 的时间（固定间隔表，仓库文档记录的历史平均间隔约 3.6 天）；近 24 小时发帖和回复数相对前 14 天的变化；Tibo 的常规作息 |
+| 什么算「已重置」 | 自己读帖子判断 | 只认配置里的权威账号（真实配置为上述 4 个）的「已发生 / 已开始推出」；承诺、有限范围的 Reset、撤回各自单独处理 |
+| 会不会说「100%」 | 没有统一标准 | 不会，上限 99%；「已确认」是另一个状态，必须有证据帖 |
+| 依据看得见吗 | 不可见 | 每个时间窗附原因码；页面可展开近 24 小时的原始帖子 |
+
+## 🛠️ 能力与工作原理
+
+```mermaid
+flowchart LR
+    A[X 官方 API 或本地采集器推送] --> B[去重并提取信号<br/>内置规则，可选 LLM]
+    B --> C{权威账号说<br/>已发生或已开始推出?}
+    C -->|是| D[已确认 Reset<br/>保存证据帖]
+    C -->|否| E[只当预测信号]
+    D --> F[预测：间隔表 + 发帖量 + 作息]
+    E --> F
+    F --> G[单页雷达 + 只读 API + 分享卡]
+    F -.-> H[V2 生存模型：只做影子记录]
+```
+
+- **预测**：28 个连续 6 小时窗口，页面汇总成未来 24 小时分段和未来 7 天。当前公开模型 `cadence-activity-circadian-v1` 由三部分组成：按距上次 Reset 的时间查的间隔表、按近期发帖量做的修正、按旧金山时间作息做的修正。
+- **公开状态**：活跃、降温、安静、数据延迟。数据新鲜、状态为「安静」且近 30 天至少有 20 条非转发帖时，页面会把最安静的连续 8 小时（UTC）标成「可能在睡觉」，这只是展示，不改概率。
+- **页面**：中文和英文，按浏览器语言选择，右上角可切换并记住；所有文案在 [`apps/web/src/i18n.ts`](./apps/web/src/i18n.ts)。
+- **只读 API**：`/api/status`、`/api/forecast`、`/api/events`、`/api/reset-status`，以及 1200×630 的分享卡 `/api/share-card.png`。
+- **采集方式**：服务自己轮询 X 官方 API；或设 `RADAR_COLLECTOR_MODE=inbox`，由你电脑上的采集器推送，X 会话不必放到服务器上。
+- **修复漏判**：策略更新后，`pnpm signal:reprocess -- <帖子 ID>` 对一条已入库的帖子重新判定。
+
+### 更多文档
+
+| 文档 | 内容 |
+|---|---|
+| [`docs/going-live.md`](./docs/going-live.md) | 从演示切到真实数据：目标账号、环境变量、本地采集器 |
+| [`docs/try-confirmation.md`](./docs/try-confirmation.md) | 本地复现「Reset 已确认」 |
+| [`docs/forecast-v2-shadow.md`](./docs/forecast-v2-shadow.md) | V2 影子策略：特征、结果定义、成熟度（英文） |
+| [`docs/operations.md`](./docs/operations.md) | 发布、回滚、重新判定、数据保留（英文） |
+| [`docs/2026-08-03-architecture-model-and-operations.zh.html`](./docs/2026-08-03-architecture-model-and-operations.zh.html) | 架构、模型说明、数据政策、验证记录（下载后用浏览器打开） |
+
+## 🧪 开发与验证
 
 ```bash
-pnpm signal:reprocess -- 2086188036493344823
+pnpm install --frozen-lockfile
+pnpm check             # lint、构建、类型检查、单元测试、开源面扫描
+pnpm test:integration  # 真实 SQLite 上的端到端：采集、编辑和删除、提取、确认、V1 与 V2 预测、API
+pnpm model:backtest    # V1 回测，需等满 168 小时窗口
 ```
 
-Against the SQLite volume in the production container, run the same compiled entrypoint:
+不用 Docker 开发：先 `pnpm db:migrate`，再分别跑 `pnpm dev:api` 和 `pnpm dev:web`。
 
-```bash
-docker compose --env-file deploy/.env.production -f deploy/compose.production.yml \
-  exec radar node apps/worker/dist/reprocess-main.js 2086188036493344823
-```
+## 🚧 边界
 
-The command only accepts a numeric X post id, refuses deleted posts or posts whose retained text has
-already been removed, and fails without writing when the current rules do not produce a confirmed
-Reset or retraction. A successful run upserts the auditable Reset event; the next worker cycle
-regenerates the forecast.
+- 只用 X 官方 API 和可选的官方状态页、发布页，不抓取网页，不做浏览器自动化。
+- 没有登录、支付、订阅、邮件、付费 API Key 和 webhook。
+- 不依赖 ewo 的主仓库、数据库、运行时和凭据。
+- Git 里没有真实的 X 历史和密钥。
 
-### Retention
+## 📄 许可证
 
-The worker writes a forecast snapshot every cycle, so the collector prunes hourly instead of
-letting the file grow forever. Snapshots inside `RADAR_RETENTION_FULL_HOURS` (6) are kept whole,
-the last `RADAR_RETENTION_HOURLY_DAYS` (30) thin to one per hour, and older ones thin to one per
-day; delivered inbox rows are dropped after `RADAR_RETENTION_INBOX_DAYS` (7). The newest snapshot —
-the one the API serves — is never a deletion candidate, and posts, extractions and reset events are
-never pruned at all: they are the evidence.
-
-The Chinese-first architecture, model card, data policy, verification evidence, and runbook are in
-[`docs/2026-08-03-architecture-model-and-operations.zh.html`](docs/2026-08-03-architecture-model-and-operations.zh.html).
-
-## Boundaries
-
-- Official X API and optional official status/release sources only; no scraping or browser automation.
-- No login, payment, subscription, email, paid API key, or webhook surface.
-- No dependency on the ewo monorepo, database, runtime, or credentials.
-- No real X history or secrets in Git.
-
-## License
-
-Apache-2.0. Open-source experiment by ewo.
+Apache-2.0，见 [`LICENSE`](./LICENSE)。ewo 的开源实验项目。
