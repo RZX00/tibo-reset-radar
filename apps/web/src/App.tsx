@@ -664,8 +664,10 @@ export function App() {
                   className="hourly-window"
                   data-peak={bucket.intervalProbability === firstDayPeak}
                   key={bucket.index}
+                  // The strip covers 24 hours from now, so some windows fall on tomorrow or
+                  // cross midnight; the spoken label carries the dates the compact one omits.
                   aria-label={t.weather.bucketAria(
-                    `${clockTime(bucket.startAt, timezone, locale)}–${clockTime(bucket.endAt, timezone, locale)}`,
+                    timeRange(bucket.startAt, bucket.endAt, timezone, locale),
                     precisePercent(bucket.intervalProbability),
                   )}
                 >

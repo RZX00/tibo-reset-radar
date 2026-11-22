@@ -202,6 +202,36 @@ describe("App", () => {
     expect(screen.getByText("四个连续 6 小时时间段")).toBeInTheDocument();
   });
 
+  it("dates every six-hour window, including the ones that cross midnight", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
+    await useTimezone("UTC");
+
+    const windowLabels = () =>
+      [
+        ...screen
+          .getByRole("region", { name: "未来 24 小时分时预测" })
+          .querySelectorAll(".hourly-window"),
+      ].map((item) => item.getAttribute("aria-label")?.replace(/，区间概率.*$/, ""));
+    expect(windowLabels()).toEqual([
+      "8月3日 08:00–14:00",
+      "8月3日 14:00–20:00",
+      "8月3日 20:00–8月4日 02:00",
+      "8月4日 02:00–08:00",
+    ]);
+
+    // Los Angeles is seven hours behind, so a different window crosses midnight.
+    await useTimezone("America/Los_Angeles");
+    await waitFor(() =>
+      expect(windowLabels()).toEqual([
+        "8月3日 01:00–07:00",
+        "8月3日 07:00–13:00",
+        "8月3日 13:00–19:00",
+        "8月3日 19:00–8月4日 01:00",
+      ]),
+    );
+  });
+
   it("formats both endpoints in the selected timezone", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Tibo Reset Radar" })).toBeInTheDocument();
